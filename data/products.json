@@ -1,0 +1,21 @@
+{
+    "laptops": [
+        {
+            "name": "Acer Nitro 5",
+            "price": 55000,
+            "tags": ["fast", "editing", "gaming", "i7", "16GB RAM"]
+        },
+        {
+            "name": "MacBook Air M2",
+            "price": 70000,
+            "tags": ["lightweight", "editing", "battery"]
+        }
+    ],
+    "printers": [
+        {
+            "name": "Epson EcoTank L3250",
+            "price": 9500,
+            "tags": ["cheap ink", "refillable", "home"]
+        }
+    ]
+}

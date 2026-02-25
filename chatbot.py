@@ -2,6 +2,10 @@ from google import genai
 from dotenv import load_dotenv
 from google.genai import types
 import os
+import json
+
+with open("data/products.json", "r") as f:
+    products = json.load(f)
 
 load_dotenv()
 
@@ -13,6 +17,8 @@ client = genai.Client()
 
 system_prompt = """
 You are a product recommendation and support chatbot.
+Available products:
+{products}
 
 You help users:
 - Recommend laptops
