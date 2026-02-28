@@ -7,7 +7,19 @@ import json
 with open("data/products.json", "r") as f:
     products = json.load(f)
 
+with open("data/troubleshooting.json") as f:
+    troubleshooting_data = json.load(f)
+
 load_dotenv()
+
+def reset_chat():
+    global chat
+    chat = client.chats.create(
+        model="gemini-3-flash-preview",
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        )
+    )
 
 # Create client (automatically uses GEMINI_API_KEY environment variable)
 if not os.getenv("GEMINI_API_KEY"):
@@ -37,6 +49,54 @@ chat = client.chats.create(
     )
 )
 
+def handle_troubleshooting(user_message):
+    for item in troubleshooting_data:
+        if item["issue"] in user_message.lower():
+            steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(item["steps"])])
+            return f"Here are the troubleshooting steps:\n{steps}"
+
+    return "Please describe the issue in more detail."
+
+def extract_intent(user_message):
+    intent_prompt = f"""
+    Analyze this message:
+
+    "{user_message}"
+
+    Extract:
+    - intent (recommendation, troubleshooting, aftersales)
+    - product_type (laptop, printer, unknown)
+    - features (list)
+
+    Return JSON only.
+    """
+
+    response = client.models.generate_content(
+        model="gemini-3-flash-preview",
+        contents=intent_prompt
+    )
+
+    try:
+        return json.loads(response.text)
+    except:
+        return None
+    
 def get_bot_response(user_message):
-    response = chat.send_message(user_message)
+
+    intent_data = extract_intent(user_message)
+
+    if intent_data and intent_data.get("intent") == "troubleshooting":
+        return handle_troubleshooting(user_message)
+
+    prompt = f"""
+    User intent:
+    {intent_data}
+
+    Available products:
+    {products}
+
+    Provide a structured response.
+    """
+
+    response = chat.send_message(prompt)
     return response.text

@@ -13,5 +13,11 @@ def chat():
     bot_reply = get_bot_response(user_message)
     return jsonify({"reply": bot_reply})
 
+@app.route("/reset", methods=["POST"])
+def reset():
+    from chatbot_logic import reset_chat
+    reset_chat()
+    return jsonify({"status": "reset successful"})
+
 if __name__ == "__main__":
     app.run(debug=True)

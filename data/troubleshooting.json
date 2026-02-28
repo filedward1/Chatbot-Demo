@@ -1,0 +1,22 @@
+[
+    {
+        "device": "printer",
+        "issue": "not printing",
+        "steps": [
+            "Check ink levels",
+            "Restart the printer",
+            "Reconnect WiFi or USB cable",
+            "Run nozzle cleaning from settings"
+        ]
+    },
+    {
+        "device": "laptop",
+        "issue": "overheating",
+        "steps": [
+            "Clean air vents",
+            "Avoid using on soft surfaces",
+            "Check background apps",
+            "Update drivers"
+        ]
+    }
+]

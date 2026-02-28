@@ -61,3 +61,11 @@ async function sendMessage() {
     inputField.focus();
     chatBox.scrollTop = chatBox.scrollHeight;
 }
+
+async function resetChat() {
+    await fetch("/reset", {
+        method: "POST"
+    });
+
+    document.getElementById("chat-box").innerHTML = "";
+}
