@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 from chatbot_logic import get_bot_response
+from chatbot_logic import conversations
 
 app = Flask(__name__)
 
@@ -18,6 +19,14 @@ def reset():
     from chatbot_logic import reset_chat
     reset_chat()
     return jsonify({"status": "reset successful"})
+
+@app.route("/history", methods=["GET"])
+def get_history():
+    return jsonify(conversations)
+
+@app.route("/history/<session_id>", methods=["GET"])
+def get_conversation(session_id):
+    return jsonify(conversations.get(session_id, {}))
 
 if __name__ == "__main__":
     app.run(debug=True)

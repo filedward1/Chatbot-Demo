@@ -69,3 +69,35 @@ async function resetChat() {
 
     document.getElementById("chat-box").innerHTML = "";
 }
+
+async function loadHistory() {
+    const response = await fetch("/history");
+    const data = await response.json();
+
+    const historyList = document.getElementById("history-list");
+    historyList.innerHTML = "";
+
+    for (let sessionId in data) {
+        const li = document.createElement("li");
+        li.innerText = data[sessionId].created_at;
+        li.onclick = () => loadConversation(sessionId);
+        historyList.appendChild(li);
+    }
+}
+
+async function loadConversation(sessionId) {
+    const response = await fetch(`/history/${sessionId}`);
+    const data = await response.json();
+
+    const chatBox = document.getElementById("chat-box");
+    chatBox.innerHTML = "";
+
+    data.messages.forEach(msg => {
+        chatBox.innerHTML += `
+            <div class="user"><strong>You:</strong> ${msg.user}</div>
+            <div class="bot"><strong>Bot:</strong> ${msg.bot}</div>
+        `;
+    });
+}
+
+window.onload = loadHistory;

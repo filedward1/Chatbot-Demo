@@ -4,6 +4,15 @@ from google.genai import types
 import os
 import json
 
+import uuid
+from datetime import datetime
+
+# Store conversations
+conversations = {}
+
+# Current session ID
+current_session_id = str(uuid.uuid4())
+
 with open("data/products.json", "r") as f:
     products = json.load(f)
 
@@ -13,13 +22,16 @@ with open("data/troubleshooting.json") as f:
 load_dotenv()
 
 def reset_chat():
-    global chat
+    global chat, current_session_id
+
     chat = client.chats.create(
         model="gemini-3-flash-preview",
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
         )
     )
+
+    current_session_id = str(uuid.uuid4())
 
 # Create client (automatically uses GEMINI_API_KEY environment variable)
 if not os.getenv("GEMINI_API_KEY"):
@@ -82,21 +94,35 @@ def extract_intent(user_message):
         return None
     
 def get_bot_response(user_message):
+    global current_session_id
 
     intent_data = extract_intent(user_message)
 
     if intent_data and intent_data.get("intent") == "troubleshooting":
-        return handle_troubleshooting(user_message)
+        bot_reply = handle_troubleshooting(user_message)
+    else:
+        prompt = f"""
+        User intent:
+        {intent_data}
 
-    prompt = f"""
-    User intent:
-    {intent_data}
+        Available products:
+        {products}
 
-    Available products:
-    {products}
+        Provide a structured response.
+        """
+        response = chat.send_message(prompt)
+        bot_reply = response.text
 
-    Provide a structured response.
-    """
+    # Save conversation
+    if current_session_id not in conversations:
+        conversations[current_session_id] = {
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "messages": []
+        }
 
-    response = chat.send_message(prompt)
-    return response.text
+    conversations[current_session_id]["messages"].append({
+        "user": user_message,
+        "bot": bot_reply
+    })
+
+    return bot_reply
