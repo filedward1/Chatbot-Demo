@@ -1,22 +1,45 @@
-body {
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
     font-family: Arial, sans-serif;
     background-color: #f4f4f4;
 }
 
-.chat-container {
-    width: 400px;
-    margin: 50px auto;
-    background: white;
+.main-container {
+    display: flex;
+    height: 100%;
+}
+
+.history-panel {
+    width: 260px;
+    background: #f0f0f0;
     padding: 20px;
-    border-radius: 8px;
+    overflow-y: auto;
+    border-right: 1px solid #ddd;
+}
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    background: white;
+}
+
+.chat-container h2 {
+    margin: 20px;
+    font-size: 1.5rem;
 }
 
 #chat-box {
-    height: 300px;
+    flex: 1;
     overflow-y: auto;
-    border: 1px solid #ddd;
-    padding: 10px;
-    margin-bottom: 10px;
+    border-top: 1px solid #ddd;
+    border-bottom: 1px solid #ddd;
+    padding: 16px;
+    margin: 0 20px;
+    background: #fafafa;
 }
 
 .user {
@@ -29,16 +52,39 @@ body {
 
 .input-area {
     display: flex;
+    align-items: center;
+    padding: 16px 20px 20px;
+    border-top: 1px solid #eee;
 }
 
 input {
     flex: 1;
-    padding: 5px;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    outline: none;
 }
 
 button {
-    padding: 5px 10px;
+    padding: 10px 14px;
+    margin-left: 8px;
+    border: none;
+    border-radius: 6px;
+    background: #2f80ed;
+    color: white;
+    cursor: pointer;
+    transition: background 150ms ease;
 }
+
+button:hover:not(:disabled) {
+    background: #1f6de0;
+}
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
 .typing {
     font-style: italic;
     color: gray;
@@ -51,31 +97,22 @@ button {
     100% { opacity: 0.3; }
 }
 
-button:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
-}
-
-.main-container {
-    display: flex;
-}
-
-.history-panel {
-    width: 250px;
-    background: #f0f0f0;
-    padding: 15px;
-    overflow-y: auto;
-}
-
 .history-panel ul {
     list-style: none;
     padding: 0;
+    margin: 0;
 }
 
 .history-panel li {
     cursor: pointer;
     margin-bottom: 10px;
-    padding: 5px;
+    padding: 10px;
     background: white;
-    border-radius: 4px;
+    border-radius: 8px;
+    border: 1px solid #e1e1e1;
+    transition: background 150ms ease;
+}
+
+.history-panel li:hover {
+    background: #eef3ff;
 }
