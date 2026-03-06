@@ -47,10 +47,12 @@ async function sendMessage() {
         // Remove typing indicator
         typingDiv.remove();
 
-        // Show bot reply
+        // Show bot reply (render markdown if present)
+        const formattedReply = marked.parse(data.reply);
         chatBox.innerHTML += `
             <div class="bot">
-                <strong>Bot:</strong> ${data.reply}
+                <strong>Bot:</strong>
+                ${formattedReply}
             </div>
         `;
 
@@ -114,18 +116,21 @@ async function loadConversation(sessionId) {
         if (data.messages[0].role) {
             // New format with role field
             data.messages.forEach(msg => {
+                const formatted = marked.parse(msg.content);
                 if (msg.role === "user") {
-                    chatBox.innerHTML += `<div class="user"><strong>You:</strong> ${msg.content}</div>`;
+                    chatBox.innerHTML += `<div class="user"><strong>You:</strong> ${formatted}</div>`;
                 } else if (msg.role === "bot") {
-                    chatBox.innerHTML += `<div class="bot"><strong>Bot:</strong> ${msg.content}</div>`;
+                    chatBox.innerHTML += `<div class="bot"><strong>Bot:</strong> ${formatted}</div>`;
                 }
             });
         } else if (data.messages[0].user) {
             // Old format with user/bot fields
             data.messages.forEach(msg => {
+                const userFormatted = marked.parse(msg.user);
+                const botFormatted = marked.parse(msg.bot);
                 chatBox.innerHTML += `
-                    <div class="user"><strong>You:</strong> ${msg.user}</div>
-                    <div class="bot"><strong>Bot:</strong> ${msg.bot}</div>
+                    <div class="user"><strong>You:</strong> ${userFormatted}</div>
+                    <div class="bot"><strong>Bot:</strong> ${botFormatted}</div>
                 `;
             });
         }
