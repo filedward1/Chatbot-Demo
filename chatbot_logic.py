@@ -116,6 +116,74 @@ def create_conversation_in_db():
         return None
 
 
+def get_conversation_title(session_id: str):
+    """Return the stored title for a conversation, if available."""
+    try:
+        response = supabase.table("conversation").select("title").eq("id", session_id).single().execute()
+        if response.data and response.data.get("title"):
+            return response.data.get("title")
+    except Exception:
+        pass
+
+    return None
+
+
+def set_conversation_title(session_id: str, title: str):
+    """Store/update the conversation title in Supabase."""
+    try:
+        supabase.table("conversation").update({"title": title}).eq("id", session_id).execute()
+        return True
+    except Exception:
+        # If this fails, we ignore it; the chat will still work without a title.
+        return False
+
+
+def maybe_generate_title_for_session(session_id: str):
+    """Generate a short conversation title based on the first few messages."""
+    # Don't regenerate if a title already exists.
+    if get_conversation_title(session_id):
+        return
+
+    # Pull the first few messages for context.
+    conv = get_conversation_messages(session_id)
+    messages = conv.get("messages", [])
+    if not messages:
+        return
+
+    # Use up to the first 4 messages (user+bot pairs) to create a title.
+    sample = messages[:4]
+    formatted = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in sample])
+
+    prompt = f"""
+    You are an assistant that generates a short, descriptive title for a conversation.
+    Provide a concise title (2-6 words) that summarizes the topic of the conversation.
+
+    Conversation:
+    {formatted}
+
+    Return only the title (no quotes or punctuation around it).
+    """
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt
+        )
+
+        title = response.text.strip().strip('"').strip("'")
+        if not title:
+            return
+
+        # Keep it reasonably short.
+        if len(title) > 80:
+            title = title[:80].rsplit(" ", 1)[0]
+
+        set_conversation_title(session_id, title)
+    except Exception:
+        # Fail silently; conversation can still function normally.
+        return
+
+
 def set_current_session(session_id: str):
     """Set the current session id and ensure it exists in the DB."""
     global current_session_id
@@ -143,6 +211,7 @@ def save_message_to_db(role, content):
             "content": content,
             "created_at": datetime.now().isoformat()
         }).execute()
+
         return response.data
     except Exception as e:
         print(f"Error saving message: {e}")
@@ -176,6 +245,9 @@ def get_bot_response(user_message, session_id=None):
     save_message_to_db("user", user_message)
     save_message_to_db("bot", bot_reply)
 
+    # Generate a short conversation title once we have at least one user + bot exchange.
+    maybe_generate_title_for_session(current_session_id)
+
     return bot_reply
 
 def get_conversation_history():
@@ -186,8 +258,10 @@ def get_conversation_history():
         
         for conv in response.data:
             conv_id = conv["id"]
+            title = conv.get("title") or get_conversation_title(conv_id)
             conversations_dict[conv_id] = {
                 "created_at": conv["created_at"],
+                "title": title,
                 "messages": []
             }
         

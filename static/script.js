@@ -54,6 +54,9 @@ async function sendMessage() {
             </div>
         `;
 
+        // Refresh history to show updated title (generated after first few messages)
+        loadHistory();
+
     } catch (error) {
         typingDiv.remove();
         chatBox.innerHTML += `
@@ -89,7 +92,9 @@ async function loadHistory() {
 
     for (let sessionId in data) {
         const li = document.createElement("li");
-        li.innerText = data[sessionId].created_at;
+        const title = data[sessionId].title;
+        const created = new Date(data[sessionId].created_at).toLocaleString();
+        li.innerText = title ? `${title} (${created})` : created;
         li.onclick = () => loadConversation(sessionId);
         historyList.appendChild(li);
     }

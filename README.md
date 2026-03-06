@@ -45,6 +45,7 @@ pip install -r requirements.txt
 **conversation table:**
 - `id` (UUID, Primary Key)
 - `created_at` (TIMESTAMP)
+- `title` (TEXT, optional)  # used for auto-generated conversation names
 
 **messages table:**
 - `id` (UUID, Primary Key)
