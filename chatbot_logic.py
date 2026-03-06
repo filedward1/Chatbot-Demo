@@ -40,6 +40,7 @@ def reset_chat():
     )
 
     current_session_id = str(uuid.uuid4())
+    return current_session_id
 
 # Create client (automatically uses GEMINI_API_KEY environment variable)
 if not os.getenv("GEMINI_API_KEY"):
@@ -131,6 +132,9 @@ def set_current_session(session_id: str):
 
 def save_message_to_db(role, content):
     # """Save a message to the database"""
+    # Ensure a conversation record exists before saving any messages.
+    create_conversation_in_db()
+
     try:
         response = supabase.table("messages").insert({
             "id": str(uuid.uuid4()),
@@ -214,5 +218,3 @@ def get_conversation_messages(session_id):
         return {"id": session_id, "messages": []}
 
 
-# Initialize the first conversation in the database (after function definitions)
-create_conversation_in_db()

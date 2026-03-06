@@ -1,3 +1,5 @@
+let currentSessionId = null;
+
 async function sendMessage() {
     const inputField = document.getElementById("user-input");
     const chatBox = document.getElementById("chat-box");
@@ -32,10 +34,15 @@ async function sendMessage() {
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ message: userMessage })
+            body: JSON.stringify({ message: userMessage, session_id: currentSessionId })
         });
 
         const data = await response.json();
+
+        // Keep session tracking in sync (if server returns it)
+        if (data.session_id) {
+            currentSessionId = data.session_id;
+        }
 
         // Remove typing indicator
         typingDiv.remove();
@@ -63,9 +70,12 @@ async function sendMessage() {
 }
 
 async function resetChat() {
-    await fetch("/reset", {
+    const response = await fetch("/reset", {
         method: "POST"
     });
+
+    const data = await response.json();
+    currentSessionId = data.session_id || null;
 
     document.getElementById("chat-box").innerHTML = "";
 }
@@ -86,6 +96,8 @@ async function loadHistory() {
 }
 
 async function loadConversation(sessionId) {
+    currentSessionId = sessionId;
+
     const response = await fetch(`/history/${sessionId}`);
     const data = await response.json();
 

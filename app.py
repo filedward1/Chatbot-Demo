@@ -6,6 +6,7 @@ from chatbot_logic import (
     get_conversation_messages,
     create_conversation_in_db,
     set_current_session,
+    current_session_id,
 )
 
 app = Flask(__name__)
@@ -20,13 +21,12 @@ def chat():
     session_id = request.json.get("session_id")
 
     bot_reply = get_bot_response(user_message, session_id=session_id)
-    return jsonify({"reply": bot_reply, "session_id": session_id})
+    return jsonify({"reply": bot_reply, "session_id": current_session_id})
 
 @app.route("/reset", methods=["POST"])
 def reset():
-    reset_chat()
-    create_conversation_in_db()
-    return jsonify({"status": "reset successful"})
+    new_session_id = reset_chat()
+    return jsonify({"status": "reset successful", "session_id": new_session_id})
 
 @app.route("/set_session", methods=["POST"])
 def set_session():
