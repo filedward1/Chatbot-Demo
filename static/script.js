@@ -92,12 +92,27 @@ async function loadConversation(sessionId) {
     const chatBox = document.getElementById("chat-box");
     chatBox.innerHTML = "";
 
-    data.messages.forEach(msg => {
-        chatBox.innerHTML += `
-            <div class="user"><strong>You:</strong> ${msg.user}</div>
-            <div class="bot"><strong>Bot:</strong> ${msg.bot}</div>
-        `;
-    });
+    // Handle both old format (user/bot pairs) and new format (role-based)
+    if (data.messages && data.messages.length > 0) {
+        if (data.messages[0].role) {
+            // New format with role field
+            data.messages.forEach(msg => {
+                if (msg.role === "user") {
+                    chatBox.innerHTML += `<div class="user"><strong>You:</strong> ${msg.content}</div>`;
+                } else if (msg.role === "bot") {
+                    chatBox.innerHTML += `<div class="bot"><strong>Bot:</strong> ${msg.content}</div>`;
+                }
+            });
+        } else if (data.messages[0].user) {
+            // Old format with user/bot fields
+            data.messages.forEach(msg => {
+                chatBox.innerHTML += `
+                    <div class="user"><strong>You:</strong> ${msg.user}</div>
+                    <div class="bot"><strong>Bot:</strong> ${msg.bot}</div>
+                `;
+            });
+        }
+    }
 }
 
 window.onload = loadHistory;

@@ -6,9 +6,7 @@ import json
 
 import uuid
 from datetime import datetime
-
-# Store conversations
-conversations = {}
+from supabase import create_client, Client
 
 # Current session ID
 current_session_id = str(uuid.uuid4())
@@ -20,6 +18,16 @@ with open("data/troubleshooting.json") as f:
     troubleshooting_data = json.load(f)
 
 load_dotenv()
+
+# Initialize Supabase client
+if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
+    print("Supabase credentials not found. Check your .env file.")
+    exit()
+
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_KEY")
+)
 
 def reset_chat():
     global chat, current_session_id
@@ -51,8 +59,6 @@ Instructions:
 4. Keep answer clear.
 """
 
-print("Chatbot is running. Type 'exit' to quit.\n")
-
 # Create a chat session for multi-turn conversation
 chat = client.chats.create(
     model='gemini-3-flash-preview',
@@ -60,6 +66,9 @@ chat = client.chats.create(
         system_instruction=system_prompt,
     )
 )
+
+print("Chatbot is running. Type 'exit' to quit.\n")
+
 
 def handle_troubleshooting(user_message):
     for item in troubleshooting_data:
@@ -92,9 +101,55 @@ def extract_intent(user_message):
         return json.loads(response.text)
     except:
         return None
-    
-def get_bot_response(user_message):
+
+def create_conversation_in_db():
+    # """Create a new conversation record in the database"""
+    try:
+        response = supabase.table("conversation").insert({
+            "id": current_session_id,
+            "created_at": datetime.now().isoformat()
+        }).execute()
+        return response.data
+    except Exception as e:
+        # It may already exist (e.g. restoring an existing session)
+        return None
+
+
+def set_current_session(session_id: str):
+    """Set the current session id and ensure it exists in the DB."""
     global current_session_id
+    current_session_id = session_id
+
+    try:
+        supabase.table("conversation").insert({
+            "id": current_session_id,
+            "created_at": datetime.now().isoformat()
+        }).execute()
+    except Exception:
+        # Ignore if the conversation already exists.
+        pass
+
+def save_message_to_db(role, content):
+    # """Save a message to the database"""
+    try:
+        response = supabase.table("messages").insert({
+            "id": str(uuid.uuid4()),
+            "conversation_id": current_session_id,
+            "role": role,
+            "content": content,
+            "created_at": datetime.now().isoformat()
+        }).execute()
+        return response.data
+    except Exception as e:
+        print(f"Error saving message: {e}")
+        return None
+    
+def get_bot_response(user_message, session_id=None):
+    global current_session_id
+
+    # If the client is continuing an existing conversation, switch to that session.
+    if session_id:
+        set_current_session(session_id)
 
     intent_data = extract_intent(user_message)
 
@@ -113,16 +168,51 @@ def get_bot_response(user_message):
         response = chat.send_message(prompt)
         bot_reply = response.text
 
-    # Save conversation
-    if current_session_id not in conversations:
-        conversations[current_session_id] = {
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "messages": []
-        }
-
-    conversations[current_session_id]["messages"].append({
-        "user": user_message,
-        "bot": bot_reply
-    })
+    # Save messages to Supabase
+    save_message_to_db("user", user_message)
+    save_message_to_db("bot", bot_reply)
 
     return bot_reply
+
+def get_conversation_history():
+    # """Fetch all conversations from the database"""
+    try:
+        response = supabase.table("conversation").select("*").execute()
+        conversations_dict = {}
+        
+        for conv in response.data:
+            conv_id = conv["id"]
+            conversations_dict[conv_id] = {
+                "created_at": conv["created_at"],
+                "messages": []
+            }
+        
+        return conversations_dict
+    except Exception as e:
+        print(f"Error fetching conversation history: {e}")
+        return {}
+
+def get_conversation_messages(session_id):
+    # """Fetch messages for a specific conversation"""
+    try:
+        response = supabase.table("messages").select("*").eq("conversation_id", session_id).order("created_at").execute()
+        
+        messages = []
+        for msg in response.data:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"],
+                "created_at": msg["created_at"]
+            })
+        
+        return {
+            "id": session_id,
+            "messages": messages
+        }
+    except Exception as e:
+        print(f"Error fetching messages: {e}")
+        return {"id": session_id, "messages": []}
+
+
+# Initialize the first conversation in the database (after function definitions)
+create_conversation_in_db()
