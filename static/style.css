@@ -26,11 +26,70 @@ html, body {
 
 .history-panel {
     width: 260px;
-    background: #fcfbf4;
+    background: rgba(255, 255, 255, 0.9);
     padding: 20px;
     overflow-y: auto;
     border-right: 1px solid rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.icon-btn {
+    border: none;
+    background: rgba(0, 0, 0, 0.06);
+    padding: 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 150ms ease;
+}
+
+.icon-btn:hover {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.icon-btn img {
+    width: 18px;
+    height: 18px;
+}
+
+.new-chat-btn {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: rgba(255, 255, 255, 0.85);
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 16px;
+    transition: background 150ms ease;
+}
+
+.new-chat-btn:hover {
+    background: rgba(255, 255, 255, 1);
+}
+
+.sidebar-divider {
+    height: 1px;
+    background: rgba(0, 0, 0, 0.1);
+    margin: 12px 0 14px;
+}
+
+.sidebar-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: rgba(0, 0, 0, 0.65);
 }
 
 .chat-container {

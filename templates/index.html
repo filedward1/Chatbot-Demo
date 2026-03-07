@@ -12,7 +12,19 @@
 <div class="main-container">
 
     <div class="history-panel">
-        <h3>Conversation History</h3>
+        <div class="sidebar-top">
+            <button class="icon-btn sidebar-menu" aria-label="Menu">
+                <img src="/static/image/list.svg" alt="Menu">
+            </button>
+            <button id="sidebar-search" class="icon-btn sidebar-search" aria-label="Search">
+                <img src="/static/image/magnifying-glass.svg" alt="Search">
+            </button>
+        </div>
+
+        <button id="new-chat-btn" class="new-chat-btn">+ New Chat</button>
+
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-title">Recent Chats</div>
         <ul id="history-list"></ul>
     </div>
 
@@ -35,7 +47,6 @@
             <button id="send-btn" onclick="sendMessage()" aria-label="Send">
                 <img src="/static/image/arrow-circle-right.svg" alt="Send">
             </button>
-            <button class="reset-button" onclick="resetChat()">Reset</button>
         </div>
     </div>
 </div>

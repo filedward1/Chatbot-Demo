@@ -168,5 +168,10 @@ window.onload = () => {
         }
     });
 
+    const newChatBtn = document.getElementById('new-chat-btn');
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', resetChat);
+    }
+
     loadHistory();
 };
