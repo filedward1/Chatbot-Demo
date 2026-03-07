@@ -12,16 +12,35 @@
 <div class="main-container">
 
     <div class="history-panel">
+        <!-- Expanded sidebar top (search + menu group) -->
         <div class="sidebar-top">
             <button class="icon-btn sidebar-menu" aria-label="Menu">
-                <img src="/static/image/list.svg" alt="Menu">
+                <img class="menu-expanded" src="/static/image/book-open-text.svg" alt="Menu">
             </button>
             <button id="sidebar-search" class="icon-btn sidebar-search" aria-label="Search">
                 <img src="/static/image/magnifying-glass.svg" alt="Search">
             </button>
         </div>
 
-        <button id="new-chat-btn" class="new-chat-btn">+ New Chat</button>
+        <!-- Collapsed sidebar mode (vertical icons) -->
+        <div class="collapsed-sidebar">
+            <button class="icon-btn sidebar-menu" aria-label="Menu">
+                <img class="menu-expanded" src="/static/image/book-open-text.svg" alt="Menu">
+            </button>
+            <div class="collapsed-divider"></div>
+            <button class="icon-btn collapsed-search" aria-label="Search">
+                <img src="/static/image/magnifying-glass.svg" alt="Search">
+            </button>
+            <button class="icon-btn collapsed-new" aria-label="New Chat">
+                <img src="/static/image/book.svg" alt="New Chat">
+            </button>
+        </div>
+
+
+        <button id="new-chat-btn" class="new-chat-btn">
+            <img src="/static/image/chat-dots.svg" alt="New Chat" class="new-chat-icon">
+            <span>New Chat</span>
+        </button>
 
         <div class="sidebar-divider"></div>
         <div class="sidebar-title">Recent Chats</div>

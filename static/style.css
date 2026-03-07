@@ -33,6 +33,40 @@ html, body {
     backdrop-filter: blur(10px);
     display: flex;
     flex-direction: column;
+    transition: width 220ms ease;
+}
+
+.history-panel.collapsed {
+    width: 72px;
+    padding: 14px 8px;
+    transition: width 220ms ease, padding 220ms ease;
+}
+
+.history-panel.collapsed .sidebar-top {
+    display: none;
+}
+
+.history-panel.collapsed .collapsed-sidebar {
+    display: flex;
+}
+
+.history-panel.collapsed .new-chat-btn,
+.history-panel.collapsed .sidebar-divider,
+.history-panel.collapsed .sidebar-title,
+.history-panel.collapsed #history-list {
+    display: none;
+}
+
+.sidebar-collapse-icons {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+}
+
+.history-panel.collapsed .sidebar-collapse-icons {
+    display: flex;
 }
 
 .sidebar-top {
@@ -40,6 +74,57 @@ html, body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 18px;
+}
+
+.sidebar-menu {
+    padding: 10px;
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.collapsed-sidebar {
+    display: none;
+}
+
+.history-panel.collapsed .collapsed-sidebar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 18px 0;
+    opacity: 1;
+    max-height: 180px;
+    overflow: hidden;
+    transition: opacity 180ms ease, max-height 180ms ease;
+}
+
+.collapsed-divider {
+    width: 26px;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.collapsed-sidebar .icon-btn {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 10px;
+    border-radius: 12px;
+}
+
+.collapsed-sidebar .icon-btn img {
+    width: 18px;
+    height: 18px;
+}
+
+.history-panel.collapsed .collapsed-sidebar {
+    display: flex;
+}
+
+.menu-expanded {
+    width: 22px;
+    height: 22px;
 }
 
 .icon-btn {
@@ -73,10 +158,19 @@ html, body {
     cursor: pointer;
     margin-bottom: 16px;
     transition: background 150ms ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
 }
 
 .new-chat-btn:hover {
     background: rgba(255, 255, 255, 1);
+}
+
+.new-chat-icon {
+    width: 1em;
+    height: 1em;
 }
 
 .sidebar-divider {

@@ -1,5 +1,6 @@
 let currentSessionId = null;
 let conversationStarted = false;
+let sidebarPinnedOpen = false;
 
 function enterChatMode() {
     if (conversationStarted) return;
@@ -106,6 +107,35 @@ async function resetChat() {
     document.getElementById("chat-box").innerHTML = "";
 }
 
+function setSidebarCollapsed(collapsed) {
+    const sidebar = document.querySelector('.history-panel');
+    const menuBtnImgs = document.querySelectorAll('.sidebar-menu img');
+    if (!sidebar || !menuBtnImgs.length) return;
+
+    sidebar.classList.toggle('collapsed', collapsed);
+
+    // Use different menu icon depending on collapsed state
+    menuBtnImgs.forEach(img => {
+        img.src = collapsed ? '/static/image/book.svg' : '/static/image/book-open-text.svg';
+    });
+}
+
+function toggleSidebar() {
+    const sidebar = document.querySelector('.history-panel');
+    if (!sidebar) return;
+
+    const isCollapsed = sidebar.classList.contains('collapsed');
+    if (isCollapsed) {
+        // Expand and pin open when clicked
+        sidebarPinnedOpen = true;
+        setSidebarCollapsed(false);
+    } else {
+        // Collapse and unpin when clicked again
+        sidebarPinnedOpen = false;
+        setSidebarCollapsed(true);
+    }
+}
+
 async function loadHistory() {
     const response = await fetch("/history");
     const data = await response.json();
@@ -172,6 +202,30 @@ window.onload = () => {
     if (newChatBtn) {
         newChatBtn.addEventListener('click', resetChat);
     }
+
+    const menuBtns = document.querySelectorAll('.sidebar-menu');
+    menuBtns.forEach((menuBtn) => {
+        menuBtn.addEventListener('click', toggleSidebar);
+    });
+
+    const collapsedSearch = document.querySelector('.collapsed-search');
+    if (collapsedSearch) {
+        collapsedSearch.addEventListener('click', () => {
+            setSidebarCollapsed(false);
+            sidebarPinnedOpen = true;
+        });
+    }
+
+    const collapsedNew = document.querySelector('.collapsed-new');
+    if (collapsedNew) {
+        collapsedNew.addEventListener('click', () => {
+            setSidebarCollapsed(false);
+            sidebarPinnedOpen = true;
+            resetChat();
+        });
+    }
+
+    // No auto collapse on mouse leave: sidebar stays in chosen state.
 
     loadHistory();
 };
