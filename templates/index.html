@@ -3,6 +3,9 @@
 <head>
     <title>SmartTech Chatbot</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Quicksand:wght@300..700&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -14,21 +17,25 @@
     </div>
 
     <div class="chat-container centered">
+        <div class="chat-logo">
+            <img src="/static/image/logo-text.png" alt="Lexa logo text" />
+        </div>
+
         <div id="welcome" class="welcome">
             <img src="/static/image/logo-img.png" alt="Lexa logo" class="welcome-logo" />
             <div class="welcome-text">
-                <p><strong>Lexa here!</strong> Tell me what you need in a laptop, and let's find it.</p>
+                <p>Lexa here! Tell me what you need in a laptop, and let's find it.</p>
             </div>
         </div>
 
         <div id="chat-box"></div>
 
         <div class="input-area">
-            <input type="text" id="user-input" placeholder="Type a message...">
+            <input type="text" id="user-input" placeholder="How can I help you today?">
             <button id="send-btn" onclick="sendMessage()" aria-label="Send">
                 <img src="/static/image/arrow-circle-right.svg" alt="Send">
             </button>
-            <button onclick="resetChat()">Reset</button>
+            <button class="reset-button" onclick="resetChat()">Reset</button>
         </div>
     </div>
 </div>
