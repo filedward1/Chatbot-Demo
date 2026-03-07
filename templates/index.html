@@ -13,15 +13,21 @@
         <ul id="history-list"></ul>
     </div>
 
-    <div class="chat-container">
-        <div class="chat-logo">
-            <img src="/static/image/logo-text.png" alt="SmartTech Chatbot logo" />
+    <div class="chat-container centered">
+        <div id="welcome" class="welcome">
+            <img src="/static/image/logo-img.png" alt="Lexa logo" class="welcome-logo" />
+            <div class="welcome-text">
+                <p><strong>Lexa here!</strong> Tell me what you need in a laptop, and let's find it.</p>
+            </div>
         </div>
+
         <div id="chat-box"></div>
 
         <div class="input-area">
             <input type="text" id="user-input" placeholder="Type a message...">
-            <button onclick="sendMessage()">Send</button>
+            <button id="send-btn" onclick="sendMessage()" aria-label="Send">
+                <img src="/static/image/arrow-circle-right.svg" alt="Send">
+            </button>
             <button onclick="resetChat()">Reset</button>
         </div>
     </div>

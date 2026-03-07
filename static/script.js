@@ -1,9 +1,23 @@
 let currentSessionId = null;
+let conversationStarted = false;
+
+function enterChatMode() {
+    if (conversationStarted) return;
+    conversationStarted = true;
+
+    const container = document.querySelector('.chat-container');
+    container.classList.remove('centered');
+
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.style.display = 'none';
+}
 
 async function sendMessage() {
+    enterChatMode();
+
     const inputField = document.getElementById("user-input");
     const chatBox = document.getElementById("chat-box");
-    const button = document.querySelector("button");
+    const button = document.getElementById("send-btn");
 
     const userMessage = inputField.value.trim();
     if (!userMessage) return;
@@ -82,6 +96,13 @@ async function resetChat() {
     const data = await response.json();
     currentSessionId = data.session_id || null;
 
+    conversationStarted = false;
+    const container = document.querySelector('.chat-container');
+    container.classList.add('centered');
+
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.style.display = '';
+
     document.getElementById("chat-box").innerHTML = "";
 }
 
@@ -103,6 +124,7 @@ async function loadHistory() {
 }
 
 async function loadConversation(sessionId) {
+    enterChatMode();
     currentSessionId = sessionId;
 
     const response = await fetch(`/history/${sessionId}`);
@@ -137,4 +159,14 @@ async function loadConversation(sessionId) {
     }
 }
 
-window.onload = loadHistory;
+window.onload = () => {
+    const inputField = document.getElementById('user-input');
+    inputField.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            sendMessage();
+        }
+    });
+
+    loadHistory();
+};

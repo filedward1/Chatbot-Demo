@@ -40,6 +40,46 @@ html, body {
     min-width: 0;
 }
 
+.chat-container.centered {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.chat-container.centered #chat-box {
+    display: none;
+}
+
+.chat-container.centered .input-area {
+    max-width: 640px;
+    width: calc(100% - 40px);
+    margin: 0 auto;
+    padding-top: 14px;
+    border-top: none;
+}
+
+.welcome {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    max-width: 680px;
+    margin: 0 20px 24px;
+}
+
+.welcome-logo {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+}
+
+.welcome-text p {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.4;
+    color: #000;
+}
+
 .chat-logo {
     display: flex;
     justify-content: center;
@@ -92,6 +132,20 @@ button {
     color: #000000;
     cursor: pointer;
     transition: background 150ms ease;
+}
+
+#send-btn {
+    padding: 10px;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#send-btn img {
+    width: 20px;
+    height: 20px;
 }
 
 button:hover:not(:disabled) {
