@@ -304,10 +304,62 @@ html, body {
     min-width: 0;
 }
 
+.conversation-titlebar {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 10px 56px 10px 20px;
+    margin: 0;
+    border-bottom: 1px solid var(--neutral-gray);
+    background: var(--surface-cream);
+}
+
+.conversation-title {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+.conversation-edit {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    padding: 6px;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.conversation-edit img {
+    width: 20px;
+    height: 20px;
+    opacity: 0.75;
+}
+
+.chat-container.in-conversation .conversation-titlebar {
+    display: flex;
+}
+
+.chat-container.in-conversation .chat-logo {
+    display: none;
+}
+
 .chat-container.centered {
     justify-content: center;
     align-items: center;
     text-align: center;
+}
+
+.chat-container.centered .conversation-titlebar {
+    display: none;
 }
 
 .chat-container.centered #chat-box {
@@ -677,12 +729,39 @@ button:disabled {
 .history-panel li {
     cursor: pointer;
     margin-bottom: 10px;
-    padding: 10px;
+    padding: 10px 40px 10px 10px;
     background: var(--surface-cream);
     border-radius: 8px;
     position: relative;
     overflow: hidden;
     transition: background 0.4s ease-out;
+}
+
+.history-edit-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    opacity: 0;
+    transition: opacity 180ms ease;
+    cursor: pointer;
+    z-index: 3;
+}
+
+.history-edit-btn img {
+    width: 16px;
+    height: 16px;
+}
+
+#history-list li:hover .history-edit-btn {
+    opacity: 1;
 }
 
 #history-list li .history-title {

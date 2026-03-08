@@ -4,6 +4,7 @@ let sidebarPinnedOpen = false;
 let historyCache = [];
 let waitingTextIntervalId = null;
 let historyXScrollbarTimeoutId = null;
+let currentConversationTitle = "New Conversation";
 
 const waitingMessages = [
     "Overclocking my brain... hang tight while I find those specs!",
@@ -17,9 +18,20 @@ function enterChatMode() {
 
     const container = document.querySelector('.chat-container');
     container.classList.remove('centered');
+    container.classList.add('in-conversation');
 
     const welcome = document.getElementById('welcome');
     if (welcome) welcome.style.display = 'none';
+}
+
+function setConversationTitle(title) {
+    const normalized = (title || "New Conversation").trim() || "New Conversation";
+    currentConversationTitle = normalized;
+    const titleEl = document.getElementById("conversation-title");
+    if (titleEl) {
+        titleEl.textContent = normalized;
+        titleEl.title = normalized;
+    }
 }
 
 function appendMessage(role, content, options = {}) {
@@ -120,6 +132,10 @@ async function sendMessage() {
     const userMessage = inputField.value.trim();
     if (!userMessage) return;
 
+    if (!currentConversationTitle || currentConversationTitle === "New Conversation") {
+        setConversationTitle(userMessage);
+    }
+
     // Display user message as a right-aligned chat bubble.
     appendMessage("user", userMessage);
 
@@ -174,6 +190,7 @@ function applyNewChatUIState() {
 
     const container = document.querySelector('.chat-container');
     container.classList.add('centered');
+    container.classList.remove('in-conversation');
 
     const welcome = document.getElementById('welcome');
     if (welcome) welcome.style.display = '';
@@ -189,6 +206,8 @@ function applyNewChatUIState() {
 
     const sendButton = document.getElementById("send-btn");
     if (sendButton) sendButton.disabled = false;
+
+    setConversationTitle("New Conversation");
 
     clearWaitingIndicator();
 
@@ -335,16 +354,32 @@ async function loadHistory() {
             ? `${new Date(createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
             : "";
 
+        const editBtn = document.createElement("button");
+        editBtn.className = "history-edit-btn";
+        editBtn.setAttribute("aria-label", "Edit Conversation");
+        editBtn.innerHTML = '<img src="/static/image/pencil-simple-line.svg" alt="Edit" />';
+        editBtn.addEventListener("click", (event) => {
+            event.stopPropagation();
+        });
+
         li.appendChild(titleEl);
         li.appendChild(metaEl);
-        li.onclick = () => loadConversation(id);
+        li.appendChild(editBtn);
+        li.onclick = () => loadConversation(id, title);
         historyList.appendChild(li);
+
+        if (currentSessionId && currentSessionId === id) {
+            setConversationTitle(title);
+        }
     });
 }
 
-async function loadConversation(sessionId) {
+async function loadConversation(sessionId, title = null) {
     enterChatMode();
     currentSessionId = sessionId;
+    if (title) {
+        setConversationTitle(title);
+    }
 
     const response = await fetch(`/history/${sessionId}`);
     const data = await response.json();
