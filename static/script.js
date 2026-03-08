@@ -1,6 +1,7 @@
 let currentSessionId = null;
 let conversationStarted = false;
 let sidebarPinnedOpen = false;
+let historyCache = [];
 
 function enterChatMode() {
     if (conversationStarted) return;
@@ -120,6 +121,65 @@ function setSidebarCollapsed(collapsed) {
     });
 }
 
+function openSearchModal() {
+    const modal = document.getElementById('search-modal');
+    const queryInput = document.getElementById('search-query');
+    if (!modal || !queryInput) return;
+
+    // Refresh history cache before searching
+    loadHistory().then(() => {
+        modal.classList.add('open');
+        queryInput.value = '';
+        renderSearchResults('');
+        setTimeout(() => queryInput.focus(), 0);
+    });
+}
+
+function closeSearchModal() {
+    const modal = document.getElementById('search-modal');
+    if (!modal) return;
+    modal.classList.remove('open');
+}
+
+function renderSearchResults(filter = '') {
+    const results = document.getElementById('search-results');
+    if (!results) return;
+
+    const query = filter.trim().toLowerCase();
+    results.innerHTML = '';
+
+    const matches = historyCache
+        .filter(item => item.title.toLowerCase().includes(query))
+        .slice(0, 20);
+
+    matches.forEach(item => {
+        const li = document.createElement('li');
+        const title = document.createElement('div');
+        title.className = 'result-title';
+        title.textContent = item.title;
+
+        const meta = document.createElement('div');
+        meta.className = 'result-meta';
+        meta.textContent = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
+
+        li.appendChild(title);
+        li.appendChild(meta);
+        li.onclick = () => {
+            closeSearchModal();
+            loadConversation(item.id);
+        };
+
+        results.appendChild(li);
+    });
+
+    if (matches.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'result-meta';
+        empty.textContent = 'No conversations found';
+        results.appendChild(empty);
+    }
+}
+
 function toggleSidebar() {
     const sidebar = document.querySelector('.history-panel');
     if (!sidebar) return;
@@ -140,17 +200,33 @@ async function loadHistory() {
     const response = await fetch("/history");
     const data = await response.json();
 
+    // Cache for search
+    historyCache = Object.entries(data).map(([id, item]) => ({
+        id,
+        title: item.title || "Untitled",
+        createdAt: item.created_at || null,
+    }));
+
     const historyList = document.getElementById("history-list");
     historyList.innerHTML = "";
 
-    for (let sessionId in data) {
+    historyCache.forEach(({ id, title, createdAt }) => {
         const li = document.createElement("li");
-        const title = data[sessionId].title;
-        const created = new Date(data[sessionId].created_at).toLocaleString();
-        li.innerText = title ? `${title} (${created})` : created;
-        li.onclick = () => loadConversation(sessionId);
+        const titleEl = document.createElement("div");
+        titleEl.className = "history-title";
+        titleEl.textContent = title || "Untitled";
+
+        const metaEl = document.createElement("div");
+        metaEl.className = "history-meta";
+        metaEl.textContent = createdAt
+            ? `Last message ${new Date(createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
+            : "";
+
+        li.appendChild(titleEl);
+        li.appendChild(metaEl);
+        li.onclick = () => loadConversation(id);
         historyList.appendChild(li);
-    }
+    });
 }
 
 async function loadConversation(sessionId) {
@@ -208,11 +284,17 @@ window.onload = () => {
         menuBtn.addEventListener('click', toggleSidebar);
     });
 
+    const sidebarSearch = document.getElementById('sidebar-search');
+    if (sidebarSearch) {
+        sidebarSearch.addEventListener('click', () => {
+            openSearchModal();
+        });
+    }
+
     const collapsedSearch = document.querySelector('.collapsed-search');
     if (collapsedSearch) {
         collapsedSearch.addEventListener('click', () => {
-            setSidebarCollapsed(false);
-            sidebarPinnedOpen = true;
+            openSearchModal();
         });
     }
 
@@ -228,4 +310,22 @@ window.onload = () => {
     // No auto collapse on mouse leave: sidebar stays in chosen state.
 
     loadHistory();
+
+    const searchQuery = document.getElementById('search-query');
+    if (searchQuery) {
+        searchQuery.addEventListener('input', (event) => {
+            renderSearchResults(event.target.value);
+        });
+
+        searchQuery.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const results = document.querySelector('#search-results li');
+                if (results) results.click();
+            }
+            if (event.key === 'Escape') {
+                closeSearchModal();
+            }
+        });
+    }
 };

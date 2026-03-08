@@ -9,6 +9,88 @@ html, body {
     background-size: cover;
     background-repeat: no-repeat;
     background-position: center;
+    color: var(--text-black);
+}
+
+:root {
+    --surface-cream: #fcfbf4;
+    --neutral-gray: #c2c2c2;
+    --text-black: #000;
+    --button-pink: #ffeef4;
+    --glow-lavender: #f3ecff;
+    --hover-gradient: linear-gradient(
+        135deg,
+        #fffbe8 10%,
+        #ffeef4 30%,
+        #f3ecff 60%,
+        #eaf2ff 100%
+    );
+    --hover-transition: transform 260ms ease, box-shadow 260ms ease;
+    --holo-overlay-transition: opacity 260ms ease, transform 520ms ease;
+}
+
+.holographic-card,
+.icon-btn,
+.new-chat-btn,
+.search-close,
+#send-btn,
+.reset-button {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    transition: var(--hover-transition);
+}
+
+.holographic-card::before,
+.icon-btn::before,
+.new-chat-btn::before,
+.search-close::before,
+#send-btn::before,
+.reset-button::before {
+    content: "";
+    position: absolute;
+    inset: -140% -40%;
+    background: var(--hover-gradient);
+    opacity: 0;
+    transform: rotate(18deg) translateY(-24%);
+    transition: var(--holo-overlay-transition);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.holographic-card > *,
+.icon-btn > *,
+.new-chat-btn > *,
+.search-close > *,
+#send-btn > *,
+.reset-button > * {
+    position: relative;
+    z-index: 1;
+}
+
+.holographic-card:hover,
+.icon-btn:hover,
+.new-chat-btn:hover,
+.search-close:hover,
+#send-btn:hover:not(:disabled),
+.reset-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px var(--glow-lavender);
+}
+
+.icon-btn:hover,
+#send-btn:hover:not(:disabled) {
+    background: var(--hover-gradient);
+}
+
+.holographic-card:hover::before,
+.icon-btn:hover::before,
+.new-chat-btn:hover::before,
+.search-close:hover::before,
+#send-btn:hover:not(:disabled)::before,
+.reset-button:hover::before {
+    opacity: 1;
+    transform: rotate(18deg) translateY(15%);
 }
 
 
@@ -26,10 +108,9 @@ html, body {
 
 .history-panel {
     width: 260px;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--surface-cream);
     padding: 20px;
-    overflow-y: auto;
-    border-right: 1px solid rgba(0, 0, 0, 0.1);
+    border-right: 1px solid var(--neutral-gray);
     backdrop-filter: blur(10px);
     display: flex;
     flex-direction: column;
@@ -104,13 +185,14 @@ html, body {
 .collapsed-divider {
     width: 26px;
     height: 1px;
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--neutral-gray);
 }
 
 .collapsed-sidebar .icon-btn {
-    background: rgba(0, 0, 0, 0.06);
+    background: transparent;
     padding: 10px;
     border-radius: 12px;
+    
 }
 
 .collapsed-sidebar .icon-btn img {
@@ -129,18 +211,13 @@ html, body {
 
 .icon-btn {
     border: none;
-    background: rgba(0, 0, 0, 0.06);
+    background: transparent;
     padding: 10px;
     border-radius: 12px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 150ms ease;
-}
-
-.icon-btn:hover {
-    background: rgba(0, 0, 0, 0.12);
 }
 
 .icon-btn img {
@@ -152,20 +229,16 @@ html, body {
     width: 100%;
     padding: 12px 14px;
     border-radius: 999px;
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid var(--neutral-gray);
+    background: transparent;
     font-weight: 600;
     cursor: pointer;
+    margin-left: 0px;
     margin-bottom: 16px;
-    transition: background 150ms ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
-}
-
-.new-chat-btn:hover {
-    background: rgba(255, 255, 255, 1);
 }
 
 .new-chat-icon {
@@ -175,15 +248,16 @@ html, body {
 
 .sidebar-divider {
     height: 1px;
-    background: rgba(0, 0, 0, 0.1);
+    background: var(--neutral-gray);
     margin: 12px 0 14px;
 }
 
 .sidebar-title {
     font-size: 0.85rem;
     font-weight: 700;
-    margin-bottom: 12px;
-    color: rgba(0, 0, 0, 0.65);
+    margin-bottom: 24px;
+    margin-top: 12px;
+    color: var(--text-black);
 }
 
 .chat-container {
@@ -209,6 +283,128 @@ html, body {
     margin: 0 auto;
     padding-top: 14px;
     border-top: none;
+}
+
+/* Search modal */
+.search-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.search-modal.open {
+    display: flex;
+}
+
+.search-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+}
+
+.search-dialog {
+    position: relative;
+    width: min(520px, 90vw);
+    max-height: 80vh;
+    background: var(--surface-cream);
+    border: 1px solid var(--neutral-gray);
+    border-radius: 16px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    color: var(--text-black);
+    display: flex;
+    flex-direction: column;
+}
+
+.search-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--neutral-gray);
+}
+
+.search-title {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.search-close {
+    background: transparent;
+    color: var(--text-black);
+    font-size: 1.25rem;
+    padding: 8px;
+    border-radius: 12px;
+}
+
+.search-body {
+    padding: 14px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
+}
+
+.search-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--hover-gradient);
+    border-radius: 14px;
+}
+
+.search-icon {
+    width: 18px;
+    height: 18px;
+    opacity: 0.75;
+}
+
+#search-query {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-black);
+    font-size: 1rem;
+    outline: none;
+}
+
+#search-query::placeholder {
+    color: var(--neutral-gray);
+}
+
+.search-results {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+}
+
+.search-results li {
+    padding: 12px 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.4s ease-out;
+}
+
+.search-results li .result-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.search-results li .result-meta {
+    font-size: 0.8rem;
+    color: var(--neutral-gray);
 }
 
 .welcome {
@@ -253,11 +449,11 @@ html, body {
 }
 
 .user {
-    color: blue;
+    color: var(--text-black);
 }
 
 .bot {
-    color: green;
+    color: var(--text-black);
 }
 
 .input-area {
@@ -267,8 +463,8 @@ html, body {
     padding: 14px 16px;
     margin: 0 20px 20px;
     border-radius: 44px;
-    background: rgba(255, 255, 255, 0.85);
-    border: 1px solid rgba(0, 0, 0, 0.14);
+    background: var(--surface-cream);
+    border: 1px solid var(--neutral-gray);
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
@@ -280,11 +476,11 @@ html, body {
     border-radius: 32px;
     font-size: 1rem;
     outline: none;
-    color: #111;
+    color: var(--text-black);
 }
 
 .input-area input::placeholder {
-    color: rgba(0, 0, 0, 0.55);
+    color: var(--neutral-gray);
 }
 
 button {
@@ -295,7 +491,6 @@ button {
     background: transparent;
     color: #000000;
     cursor: pointer;
-    transition: background 150ms ease;
 }
 
 #send-btn {
@@ -305,12 +500,8 @@ button {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.06);
+    background: transparent;
     border-radius: 34px;
-}
-
-#send-btn:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.12);
 }
 
 #send-btn img {
@@ -318,12 +509,8 @@ button {
     height: 20px;
 }
 
-button:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.08);
-}
-
 button:disabled {
-    background-color: rgba(0, 0, 0, 0.06);
+    background-color: var(--neutral-gray);
     cursor: not-allowed;
 }
 
@@ -338,32 +525,9 @@ button:disabled {
     opacity: 1;
 }
 
-#send-btn {
-    padding: 10px;
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#send-btn img {
-    width: 20px;
-    height: 20px;
-}
-
-button:hover:not(:disabled) {
-    background: #fef4a5;
-}
-
-button:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
-}
-
 .typing {
     font-style: italic;
-    color: gray;
+    color: var(--neutral-gray);
     animation: blink 1s infinite;
 }
 
@@ -383,12 +547,66 @@ button:disabled {
     cursor: pointer;
     margin-bottom: 10px;
     padding: 10px;
-    background: white;
+    background: var(--surface-cream);
     border-radius: 8px;
-    border: 1px solid #e1e1e1;
-    transition: background 150ms ease;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.4s ease-out;
 }
 
-.history-panel li:hover {
-    background: #eef3ff;
+#history-list li .history-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-black);
+    line-height: 1.25;
+    margin-bottom: 4px;
 }
+
+#history-list li .history-meta {
+    font-size: 0.8rem;
+    color: var(--neutral-gray);
+    line-height: 1.2;
+}
+
+#history-list li::after,
+#history-list li::before,
+#search-results li::after,
+#search-results li::before,
+#search-list li::after,
+#search-list li::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background: var(--hover-gradient);
+    left: 0;
+    transform: scaleX(0);
+    transition: transform 0.4s ease-out;
+    pointer-events: none;
+    z-index: 2;
+    border: var(--neutral-gray);
+}
+
+#history-list li::after,
+#search-results li::after,
+#search-list li::after {
+    bottom: 0;
+    transform-origin: right;
+}
+
+#history-list li::before,
+#search-results li::before,
+#search-list li::before {
+    top: 0;
+    transform-origin: left;
+}
+
+#history-list li:hover::after,
+#history-list li:hover::before,
+#search-results li:hover::after,
+#search-results li:hover::before,
+#search-list li:hover::after,
+#search-list li:hover::before {
+    transform: scaleX(1);
+}
+
