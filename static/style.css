@@ -336,12 +336,43 @@ html, body {
     padding: 6px;
     border-radius: 10px;
     cursor: pointer;
+    margin-left: 0;
+    overflow: hidden;
+    isolation: isolate;
+    transition: transform 260ms ease, box-shadow 260ms ease, background 260ms ease;
+}
+
+.conversation-edit::before,
+.history-edit-btn::before {
+    content: "";
+    position: absolute;
+    inset: -140% -40%;
+    background: var(--hover-gradient);
+    opacity: 0;
+    transform: rotate(18deg) translateY(-24%);
+    transition: var(--holo-overlay-transition);
+    pointer-events: none;
+    z-index: 0;
 }
 
 .conversation-edit img {
     width: 20px;
     height: 20px;
     opacity: 0.75;
+    position: relative;
+    z-index: 1;
+}
+
+.conversation-edit:hover {
+    transform: translateY(-50%) scale(1.05);
+    box-shadow: 0 0 20px var(--glow-lavender);
+    background: var(--hover-gradient);
+}
+
+.conversation-edit:hover::before,
+.history-edit-btn:hover::before {
+    opacity: 1;
+    transform: rotate(18deg) translateY(15%);
 }
 
 .chat-container.in-conversation .conversation-titlebar {
@@ -538,6 +569,24 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    scrollbar-width: none;
+}
+
+#chat-box::-webkit-scrollbar {
+    width: 0;
+}
+
+#chat-box::-webkit-scrollbar-thumb {
+    background: var(--neutral-gray);
+    border-radius: 999px;
+}
+
+.chat-container.show-chat-scroll #chat-box {
+    scrollbar-width: thin;
+}
+
+.chat-container.show-chat-scroll #chat-box::-webkit-scrollbar {
+    width: 8px;
 }
 
 .message-row {
@@ -750,7 +799,10 @@ button:disabled {
     border: none;
     background: transparent;
     opacity: 0;
-    transition: opacity 180ms ease;
+    margin-left: 0;
+    overflow: hidden;
+    isolation: isolate;
+    transition: opacity 180ms ease, transform 260ms ease, box-shadow 260ms ease, background 260ms ease;
     cursor: pointer;
     z-index: 3;
 }
@@ -758,10 +810,18 @@ button:disabled {
 .history-edit-btn img {
     width: 16px;
     height: 16px;
+    position: relative;
+    z-index: 1;
 }
 
 #history-list li:hover .history-edit-btn {
     opacity: 1;
+}
+
+.history-edit-btn:hover {
+    transform: translateY(-50%) scale(1.05);
+    box-shadow: 0 0 20px var(--glow-lavender);
+    background: var(--hover-gradient);
 }
 
 #history-list li .history-title {

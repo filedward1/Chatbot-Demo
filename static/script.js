@@ -4,6 +4,7 @@ let sidebarPinnedOpen = false;
 let historyCache = [];
 let waitingTextIntervalId = null;
 let historyXScrollbarTimeoutId = null;
+let chatScrollbarTimeoutId = null;
 let currentConversationTitle = "New Conversation";
 
 const waitingMessages = [
@@ -481,6 +482,22 @@ window.onload = () => {
             historyXScrollbarTimeoutId = setTimeout(() => {
                 historyPanel.classList.remove('show-x-scroll');
                 historyXScrollbarTimeoutId = null;
+            }, 900);
+        });
+    }
+
+    const chatContainer = document.querySelector('.chat-container');
+    const chatBox = document.getElementById('chat-box');
+    if (chatContainer && chatBox) {
+        chatBox.addEventListener('scroll', () => {
+            chatContainer.classList.add('show-chat-scroll');
+            if (chatScrollbarTimeoutId) {
+                clearTimeout(chatScrollbarTimeoutId);
+            }
+
+            chatScrollbarTimeoutId = setTimeout(() => {
+                chatContainer.classList.remove('show-chat-scroll');
+                chatScrollbarTimeoutId = null;
             }, 900);
         });
     }
