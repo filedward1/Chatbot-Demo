@@ -2,6 +2,13 @@ let currentSessionId = null;
 let conversationStarted = false;
 let sidebarPinnedOpen = false;
 let historyCache = [];
+let waitingTextIntervalId = null;
+
+const waitingMessages = [
+    "Overclocking my brain... hang tight while I find those specs!",
+    "Lexa is currently deep in the database. Don't close the lid just yet!",
+    "Booting up your options..."
+];
 
 function enterChatMode() {
     if (conversationStarted) return;
@@ -50,6 +57,58 @@ function appendMessage(role, content, options = {}) {
     return row;
 }
 
+function setWaitingText(waitingTextEl, text) {
+    if (!waitingTextEl) return;
+    waitingTextEl.textContent = text;
+    waitingTextEl.style.setProperty("--typing-ch", `${Math.max(text.length, 1)}ch`);
+
+    // Restart animation each time the status message changes.
+    waitingTextEl.classList.remove("typing-reveal");
+    void waitingTextEl.offsetWidth;
+    waitingTextEl.classList.add("typing-reveal");
+}
+
+function createWaitingIndicator() {
+    const chatBox = document.getElementById("chat-box");
+    if (!chatBox) return null;
+
+    const row = document.createElement("div");
+    row.className = "message-row message-bot waiting-row";
+    row.id = "typing-indicator";
+
+    const avatar = document.createElement("img");
+    avatar.className = "message-avatar";
+    avatar.src = "/static/image/logo-img.png";
+    avatar.alt = "Bot";
+
+    const waitingText = document.createElement("div");
+    waitingText.className = "waiting-text";
+
+    row.appendChild(avatar);
+    row.appendChild(waitingText);
+    chatBox.appendChild(row);
+
+    let index = 0;
+    setWaitingText(waitingText, waitingMessages[index]);
+
+    waitingTextIntervalId = setInterval(() => {
+        index = (index + 1) % waitingMessages.length;
+        setWaitingText(waitingText, waitingMessages[index]);
+    }, 2400);
+
+    return row;
+}
+
+function clearWaitingIndicator() {
+    if (waitingTextIntervalId) {
+        clearInterval(waitingTextIntervalId);
+        waitingTextIntervalId = null;
+    }
+
+    const waitingRow = document.getElementById("typing-indicator");
+    if (waitingRow) waitingRow.remove();
+}
+
 async function sendMessage() {
     enterChatMode();
 
@@ -67,8 +126,8 @@ async function sendMessage() {
     inputField.disabled = true;
     button.disabled = true;
 
-    // Add typing indicator
-    const typingDiv = appendMessage("bot", "typing...", { typing: true, id: "typing-indicator" });
+    // Add rotating waiting status indicator (no bubble container).
+    createWaitingIndicator();
 
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -88,8 +147,8 @@ async function sendMessage() {
             currentSessionId = data.session_id;
         }
 
-        // Remove typing indicator
-        typingDiv.remove();
+        // Remove waiting indicator once response arrives.
+        clearWaitingIndicator();
 
         // Show bot reply (render markdown if present)
         const formattedReply = marked.parse(data.reply);
@@ -99,7 +158,7 @@ async function sendMessage() {
         loadHistory();
 
     } catch (error) {
-        typingDiv.remove();
+        clearWaitingIndicator();
         appendMessage("bot", "Error connecting to server.");
     }
 
@@ -130,8 +189,7 @@ function applyNewChatUIState() {
     const sendButton = document.getElementById("send-btn");
     if (sendButton) sendButton.disabled = false;
 
-    const typing = document.getElementById("typing-indicator");
-    if (typing) typing.remove();
+    clearWaitingIndicator();
 
     closeSearchModal();
 }

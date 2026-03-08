@@ -115,6 +115,7 @@ html, body {
     display: flex;
     flex-direction: column;
     transition: width 220ms ease;
+    overflow-x: auto;
 }
 
 .history-panel.collapsed {
@@ -514,6 +515,28 @@ html, body {
     color: var(--neutral-gray);
 }
 
+.waiting-row {
+    align-items: center;
+}
+
+.waiting-text {
+    color: var(--text-black);
+    font-size: 1.05rem;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    width: 0;
+}
+
+.waiting-text.typing-reveal {
+    animation: typingReveal 900ms steps(42, end) forwards;
+}
+
+@keyframes typingReveal {
+    from { width: 0; }
+    to { width: var(--typing-ch, 28ch); }
+}
+
 .input-area {
     display: flex;
     align-items: center;
@@ -581,18 +604,6 @@ button:disabled {
 
 .reset-button:hover {
     opacity: 1;
-}
-
-.typing {
-    font-style: italic;
-    color: var(--neutral-gray);
-    animation: blink 1s infinite;
-}
-
-@keyframes blink {
-    0% { opacity: 0.3; }
-    50% { opacity: 1; }
-    100% { opacity: 0.3; }
 }
 
 .history-panel ul {
