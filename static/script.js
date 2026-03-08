@@ -3,6 +3,7 @@ let conversationStarted = false;
 let sidebarPinnedOpen = false;
 let historyCache = [];
 let waitingTextIntervalId = null;
+let historyXScrollbarTimeoutId = null;
 
 const waitingMessages = [
     "Overclocking my brain... hang tight while I find those specs!",
@@ -226,6 +227,11 @@ function setSidebarCollapsed(collapsed) {
     menuBtnImgs.forEach(img => {
         img.src = collapsed ? '/static/image/book.svg' : '/static/image/book-open-text.svg';
     });
+
+    // Clear compact scrolled header mode when sidebar is manually toggled.
+    if (collapsed) {
+        sidebar.classList.remove('compact-history-top');
+    }
 }
 
 function openSearchModal() {
@@ -408,6 +414,39 @@ window.onload = () => {
             setSidebarCollapsed(true);
             sidebarPinnedOpen = false;
             createNewChat();
+        });
+    }
+
+    const scrolledSearch = document.querySelector('.scrolled-search');
+    if (scrolledSearch) {
+        scrolledSearch.addEventListener('click', () => {
+            openSearchModal();
+        });
+    }
+
+    const scrolledNew = document.querySelector('.scrolled-new');
+    if (scrolledNew) {
+        scrolledNew.addEventListener('click', () => {
+            createNewChat();
+        });
+    }
+
+    const historyPanel = document.querySelector('.history-panel');
+    const historyList = document.getElementById('history-list');
+    if (historyPanel && historyList) {
+        historyList.addEventListener('scroll', () => {
+            const shouldCompactTop = historyList.scrollTop > 18 && !historyPanel.classList.contains('collapsed');
+            historyPanel.classList.toggle('compact-history-top', shouldCompactTop);
+
+            historyPanel.classList.add('show-x-scroll');
+            if (historyXScrollbarTimeoutId) {
+                clearTimeout(historyXScrollbarTimeoutId);
+            }
+
+            historyXScrollbarTimeoutId = setTimeout(() => {
+                historyPanel.classList.remove('show-x-scroll');
+                historyXScrollbarTimeoutId = null;
+            }, 900);
         });
     }
 
