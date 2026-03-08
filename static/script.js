@@ -90,22 +90,52 @@ async function sendMessage() {
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-async function resetChat() {
-    const response = await fetch("/reset", {
-        method: "POST"
-    });
-
-    const data = await response.json();
-    currentSessionId = data.session_id || null;
-
+function applyNewChatUIState() {
     conversationStarted = false;
+
     const container = document.querySelector('.chat-container');
     container.classList.add('centered');
 
     const welcome = document.getElementById('welcome');
     if (welcome) welcome.style.display = '';
 
-    document.getElementById("chat-box").innerHTML = "";
+    const chatBox = document.getElementById("chat-box");
+    if (chatBox) chatBox.innerHTML = "";
+
+    const inputField = document.getElementById("user-input");
+    if (inputField) {
+        inputField.value = "";
+        inputField.disabled = false;
+    }
+
+    const sendButton = document.getElementById("send-btn");
+    if (sendButton) sendButton.disabled = false;
+
+    const typing = document.getElementById("typing-indicator");
+    if (typing) typing.remove();
+
+    closeSearchModal();
+}
+
+async function createNewChat() {
+    applyNewChatUIState();
+
+    try {
+        const response = await fetch("/reset", {
+            method: "POST"
+        });
+
+        const data = await response.json();
+        currentSessionId = data.session_id || null;
+    } catch (error) {
+        // Keep the UI usable even if reset API is temporarily unavailable.
+        currentSessionId = null;
+    }
+
+    await loadHistory();
+
+    const inputField = document.getElementById("user-input");
+    if (inputField) inputField.focus();
 }
 
 function setSidebarCollapsed(collapsed) {
@@ -276,7 +306,7 @@ window.onload = () => {
 
     const newChatBtn = document.getElementById('new-chat-btn');
     if (newChatBtn) {
-        newChatBtn.addEventListener('click', resetChat);
+        newChatBtn.addEventListener('click', createNewChat);
     }
 
     const menuBtns = document.querySelectorAll('.sidebar-menu');
@@ -301,9 +331,9 @@ window.onload = () => {
     const collapsedNew = document.querySelector('.collapsed-new');
     if (collapsedNew) {
         collapsedNew.addEventListener('click', () => {
-            setSidebarCollapsed(false);
-            sidebarPinnedOpen = true;
-            resetChat();
+            setSidebarCollapsed(true);
+            sidebarPinnedOpen = false;
+            createNewChat();
         });
     }
 
