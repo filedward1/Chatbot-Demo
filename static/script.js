@@ -6,6 +6,7 @@ let waitingTextIntervalId = null;
 let historyXScrollbarTimeoutId = null;
 let chatScrollbarTimeoutId = null;
 let currentConversationTitle = "New Conversation";
+let renameModalSessionId = null;
 
 const waitingMessages = [
     "Overclocking my brain... hang tight while I find those specs!",
@@ -33,6 +34,153 @@ function setConversationTitle(title) {
         titleEl.textContent = normalized;
         titleEl.title = normalized;
     }
+}
+
+async function saveConversationTitle(sessionId, title) {
+    const response = await fetch(`/history/${sessionId}/title`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ title })
+    });
+
+    if (!response.ok) {
+        throw new Error("Unable to update conversation title");
+    }
+
+    return response.json();
+}
+
+function openRenameModal(sessionId, currentTitle = "") {
+    if (!sessionId) return;
+
+    const modal = document.getElementById("rename-modal");
+    const input = document.getElementById("rename-input");
+    if (!modal || !input) return;
+
+    renameModalSessionId = sessionId;
+    input.value = (currentTitle || "").trim() || "Untitled";
+
+    modal.classList.add("open");
+    setTimeout(() => {
+        input.focus();
+        input.select();
+    }, 0);
+}
+
+function closeRenameModal() {
+    const modal = document.getElementById("rename-modal");
+    if (!modal) return;
+
+    modal.classList.remove("open");
+    renameModalSessionId = null;
+}
+
+async function submitRenameModal() {
+    const input = document.getElementById("rename-input");
+    if (!input || !renameModalSessionId) return;
+
+    const cleanTitle = input.value.trim();
+    if (!cleanTitle) return;
+
+    await saveConversationTitle(renameModalSessionId, cleanTitle);
+
+    if (currentSessionId === renameModalSessionId) {
+        setConversationTitle(cleanTitle);
+    }
+
+    closeRenameModal();
+    await loadHistory();
+}
+
+async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
+    if (!li || li.classList.contains("editing-inline")) return;
+
+    const titleEl = li.querySelector(".history-title");
+    if (!titleEl) return;
+
+    li.classList.add("editing-inline");
+
+    const originalTitle = (currentTitle || titleEl.textContent || "Untitled").trim() || "Untitled";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "history-inline-input";
+    input.value = originalTitle;
+
+    const editBtn = li.querySelector(".history-edit-btn");
+    const editIcon = editBtn ? editBtn.querySelector("img") : null;
+    if (editBtn) {
+        editBtn.setAttribute("aria-label", "Save Conversation Title");
+    }
+    if (editIcon) {
+        editIcon.src = "/static/image/paper-plane-right.svg";
+        editIcon.alt = "Save";
+    }
+
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const finish = async (commit) => {
+        if (finished) return;
+        finished = true;
+
+        delete li.__finishInlineRename;
+
+        if (editBtn) {
+            editBtn.setAttribute("aria-label", "Edit Conversation");
+        }
+        if (editIcon) {
+            editIcon.src = "/static/image/pencil-simple-line.svg";
+            editIcon.alt = "Edit";
+        }
+
+        if (!commit) {
+            input.replaceWith(titleEl);
+            li.classList.remove("editing-inline");
+            return;
+        }
+
+        const cleanTitle = input.value.trim();
+        if (!cleanTitle || cleanTitle === originalTitle) {
+            input.replaceWith(titleEl);
+            li.classList.remove("editing-inline");
+            return;
+        }
+
+        try {
+            await saveConversationTitle(sessionId, cleanTitle);
+            if (currentSessionId === sessionId) {
+                setConversationTitle(cleanTitle);
+            }
+            await loadHistory();
+        } catch (error) {
+            input.replaceWith(titleEl);
+            li.classList.remove("editing-inline");
+            appendMessage("bot", "Unable to rename conversation right now.");
+        }
+    };
+
+    li.__finishInlineRename = finish;
+
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("keydown", async (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            await finish(true);
+        }
+
+        if (event.key === "Escape") {
+            event.preventDefault();
+            await finish(false);
+        }
+    });
+
+    input.addEventListener("blur", async () => {
+        await finish(true);
+    });
 }
 
 function appendMessage(role, content, options = {}) {
@@ -359,8 +507,13 @@ async function loadHistory() {
         editBtn.className = "history-edit-btn";
         editBtn.setAttribute("aria-label", "Edit Conversation");
         editBtn.innerHTML = '<img src="/static/image/pencil-simple-line.svg" alt="Edit" />';
-        editBtn.addEventListener("click", (event) => {
+        editBtn.addEventListener("click", async (event) => {
             event.stopPropagation();
+            if (li.classList.contains("editing-inline") && typeof li.__finishInlineRename === "function") {
+                await li.__finishInlineRename(true);
+                return;
+            }
+            await beginInlineHistoryRename(li, id, title);
         });
 
         li.appendChild(titleEl);
@@ -464,6 +617,51 @@ window.onload = () => {
     if (scrolledNew) {
         scrolledNew.addEventListener('click', () => {
             createNewChat();
+        });
+    }
+
+    const conversationEdit = document.getElementById('conversation-edit');
+    if (conversationEdit) {
+        conversationEdit.addEventListener('click', async () => {
+            if (!currentSessionId) return;
+
+            openRenameModal(currentSessionId, currentConversationTitle);
+        });
+    }
+
+    const renameCancel = document.getElementById('rename-cancel');
+    if (renameCancel) {
+        renameCancel.addEventListener('click', () => {
+            closeRenameModal();
+        });
+    }
+
+    const renameSave = document.getElementById('rename-save');
+    if (renameSave) {
+        renameSave.addEventListener('click', async () => {
+            try {
+                await submitRenameModal();
+            } catch (error) {
+                appendMessage("bot", "Unable to rename conversation right now.");
+            }
+        });
+    }
+
+    const renameInput = document.getElementById('rename-input');
+    if (renameInput) {
+        renameInput.addEventListener('keydown', async (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                try {
+                    await submitRenameModal();
+                } catch (error) {
+                    appendMessage("bot", "Unable to rename conversation right now.");
+                }
+            }
+
+            if (event.key === 'Escape') {
+                closeRenameModal();
+            }
         });
     }
 

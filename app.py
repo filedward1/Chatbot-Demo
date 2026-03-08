@@ -6,6 +6,7 @@ from chatbot_logic import (
     get_conversation_messages,
     create_conversation_in_db,
     set_current_session,
+    set_conversation_title,
     current_session_id,
 )
 
@@ -45,6 +46,20 @@ def get_history():
 def get_conversation(session_id):
     conversation = get_conversation_messages(session_id)
     return jsonify(conversation)
+
+@app.route("/history/<session_id>/title", methods=["POST"])
+def update_conversation_title(session_id):
+    title = (request.json or {}).get("title", "")
+    title = title.strip()
+
+    if not title:
+        return jsonify({"status": "missing title"}), 400
+
+    ok = set_conversation_title(session_id, title)
+    if not ok:
+        return jsonify({"status": "failed to update title"}), 500
+
+    return jsonify({"status": "ok", "id": session_id, "title": title})
 
 if __name__ == "__main__":
     app.run(debug=True)

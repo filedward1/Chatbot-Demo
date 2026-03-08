@@ -268,7 +268,7 @@ html, body {
     border-radius: 999px;
     border: 1px solid var(--neutral-gray);
     background: transparent;
-    font-weight: 600;
+    font-weight: normal;
     cursor: pointer;
     margin-left: 0px;
     margin-bottom: 16px;
@@ -316,7 +316,7 @@ html, body {
 }
 
 .conversation-title {
-    font-size: 2rem;
+    font-size: 1rem;
     font-weight: 700;
     line-height: 1.2;
     text-align: center;
@@ -456,9 +456,13 @@ html, body {
 .search-close {
     background: transparent;
     color: var(--text-black);
-    font-size: 1.25rem;
     padding: 8px;
     border-radius: 12px;
+}
+
+.close-icon {
+    width: 16px;
+    height: 16px;
 }
 
 .search-body {
@@ -493,6 +497,55 @@ html, body {
     outline: none;
 }
 
+#rename-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-black);
+    font-size: 1.05rem;
+    outline: none;
+}
+
+#rename-input::placeholder {
+    color: var(--neutral-gray);
+}
+
+.rename-dialog {
+    width: min(560px, 92vw);
+}
+
+.rename-body {
+    gap: 18px;
+}
+
+.rename-input-wrapper {
+    background: var(--hover-gradient);
+}
+
+.rename-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-action-btn {
+    min-width: 110px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--neutral-gray);
+    background: transparent;
+    font-weight: normal;
+    cursor: pointer;
+    margin-left: 0;
+    transition: var(--hover-transition);
+}
+
+.modal-action-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px var(--glow-lavender);
+    background: var(--hover-gradient);
+}
+
 #search-query::placeholder {
     color: var(--neutral-gray);
 }
@@ -518,7 +571,7 @@ html, body {
 }
 
 .search-results li .result-title {
-    font-weight: 600;
+    font-weight: normal;
     font-size: 0.95rem;
 }
 
@@ -818,6 +871,10 @@ button:disabled {
     opacity: 1;
 }
 
+#history-list li.editing-inline .history-edit-btn {
+    opacity: 1;
+}
+
 .history-edit-btn:hover {
     transform: translateY(-50%) scale(1.05);
     box-shadow: 0 0 20px var(--glow-lavender);
@@ -826,16 +883,34 @@ button:disabled {
 
 #history-list li .history-title {
     font-size: 1.05rem;
-    font-weight: 600;
+    font-weight: normal;
     color: var(--text-black);
     line-height: 1.25;
     margin-bottom: 4px;
+}
+
+.history-inline-input {
+    width: 100%;
+    border: 1px solid var(--neutral-gray);
+    border-radius: 8px;
+    background: var(--hover-gradient);
+    color: var(--text-black);
+    font-size: 1rem;
+    font-weight: normal;
+    line-height: 1.2;
+    padding: 6px 8px;
+    outline: none;
+    box-sizing: border-box;
 }
 
 #history-list li .history-meta {
     font-size: 0.8rem;
     color: var(--neutral-gray);
     line-height: 1.2;
+}
+
+#history-list li.editing-inline .history-meta {
+    display: none;
 }
 
 #history-list li::after,
