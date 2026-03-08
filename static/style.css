@@ -446,14 +446,72 @@ html, body {
     overflow-y: auto;
     padding: 16px;
     margin: 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.user {
-    color: var(--text-black);
+.message-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    width: 100%;
 }
 
-.bot {
+.message-user {
+    justify-content: flex-end;
+    align-items: flex-end;
+}
+
+.message-bot {
+    justify-content: flex-start;
+    align-items: flex-start;
+}
+
+.message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: transparent;
+    flex: 0 0 32px;
+}
+
+.message-bubble {
+    max-width: min(78%, 760px);
+    background: var(--surface-cream);
     color: var(--text-black);
+    border: 1px solid var(--neutral-gray);
+    border-radius: 16px;
+    padding: 12px 14px;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.user-bubble {
+    border-radius: 16px 16px 4px 16px;
+}
+
+.bot-bubble {
+    border-radius: 16px 16px 16px 4px;
+}
+
+.message-bubble p {
+    margin: 0 0 8px;
+}
+
+.message-bubble p:last-child {
+    margin-bottom: 0;
+}
+
+.message-bubble ul,
+.message-bubble ol {
+    margin: 8px 0 0 22px;
+}
+
+.message-row.typing .message-bubble {
+    font-style: italic;
+    color: var(--neutral-gray);
 }
 
 .input-area {

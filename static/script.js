@@ -14,6 +14,42 @@ function enterChatMode() {
     if (welcome) welcome.style.display = 'none';
 }
 
+function appendMessage(role, content, options = {}) {
+    const { isHtml = false, typing = false, id = null } = options;
+    const chatBox = document.getElementById("chat-box");
+    if (!chatBox) return null;
+
+    const row = document.createElement("div");
+    row.className = `message-row ${role === "user" ? "message-user" : "message-bot"}`;
+    if (typing) row.classList.add("typing");
+    if (id) row.id = id;
+
+    const avatar = document.createElement("img");
+    avatar.className = "message-avatar";
+    avatar.src = role === "user" ? "/static/image/user.svg" : "/static/image/logo-img.png";
+    avatar.alt = role === "user" ? "User" : "Bot";
+
+    const bubble = document.createElement("div");
+    bubble.className = `message-bubble ${role === "user" ? "user-bubble" : "bot-bubble"}`;
+
+    if (isHtml) {
+        bubble.innerHTML = content;
+    } else {
+        bubble.textContent = content;
+    }
+
+    if (role === "user") {
+        row.appendChild(bubble);
+        row.appendChild(avatar);
+    } else {
+        row.appendChild(avatar);
+        row.appendChild(bubble);
+    }
+
+    chatBox.appendChild(row);
+    return row;
+}
+
 async function sendMessage() {
     enterChatMode();
 
@@ -24,23 +60,15 @@ async function sendMessage() {
     const userMessage = inputField.value.trim();
     if (!userMessage) return;
 
-    // Display user message
-    chatBox.innerHTML += `
-        <div class="user">
-            <strong>You:</strong> ${userMessage}
-        </div>
-    `;
+    // Display user message as a right-aligned chat bubble.
+    appendMessage("user", userMessage);
 
     inputField.value = "";
     inputField.disabled = true;
     button.disabled = true;
 
     // Add typing indicator
-    const typingDiv = document.createElement("div");
-    typingDiv.className = "bot typing";
-    typingDiv.id = "typing-indicator";
-    typingDiv.innerHTML = "<strong>Bot:</strong> typing...";
-    chatBox.appendChild(typingDiv);
+    const typingDiv = appendMessage("bot", "typing...", { typing: true, id: "typing-indicator" });
 
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -65,23 +93,14 @@ async function sendMessage() {
 
         // Show bot reply (render markdown if present)
         const formattedReply = marked.parse(data.reply);
-        chatBox.innerHTML += `
-            <div class="bot">
-                <strong>Bot:</strong>
-                ${formattedReply}
-            </div>
-        `;
+        appendMessage("bot", formattedReply, { isHtml: true });
 
         // Refresh history to show updated title (generated after first few messages)
         loadHistory();
 
     } catch (error) {
         typingDiv.remove();
-        chatBox.innerHTML += `
-            <div class="bot">
-                <strong>Bot:</strong> Error connecting to server.
-            </div>
-        `;
+        appendMessage("bot", "Error connecting to server.");
     }
 
     inputField.disabled = false;
@@ -249,7 +268,7 @@ async function loadHistory() {
         const metaEl = document.createElement("div");
         metaEl.className = "history-meta";
         metaEl.textContent = createdAt
-            ? `Last message ${new Date(createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
+            ? `${new Date(createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
             : "";
 
         li.appendChild(titleEl);
@@ -274,22 +293,19 @@ async function loadConversation(sessionId) {
         if (data.messages[0].role) {
             // New format with role field
             data.messages.forEach(msg => {
-                const formatted = marked.parse(msg.content);
                 if (msg.role === "user") {
-                    chatBox.innerHTML += `<div class="user"><strong>You:</strong> ${formatted}</div>`;
+                    appendMessage("user", msg.content || "");
                 } else if (msg.role === "bot") {
-                    chatBox.innerHTML += `<div class="bot"><strong>Bot:</strong> ${formatted}</div>`;
+                    const formatted = marked.parse(msg.content || "");
+                    appendMessage("bot", formatted, { isHtml: true });
                 }
             });
         } else if (data.messages[0].user) {
             // Old format with user/bot fields
             data.messages.forEach(msg => {
-                const userFormatted = marked.parse(msg.user);
-                const botFormatted = marked.parse(msg.bot);
-                chatBox.innerHTML += `
-                    <div class="user"><strong>You:</strong> ${userFormatted}</div>
-                    <div class="bot"><strong>Bot:</strong> ${botFormatted}</div>
-                `;
+                appendMessage("user", msg.user || "");
+                const botFormatted = marked.parse(msg.bot || "");
+                appendMessage("bot", botFormatted, { isHtml: true });
             });
         }
     }
