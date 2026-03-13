@@ -1,11 +1,14 @@
-# CHATBOT DEMO
-This project is a practice implementation of a full-stack AI chatbot system.
-It demonstrates how to design, develop, and integrate both frontend and backend
-components to create a functional chatbot demo.
+# LEXA Chatbot Demo
+This project is a practice implementation of a full-stack AI chatbot system centered on **LEXA**.
+
+**LEXA** stands for **Laptop EXpert Assistant**.
+The name emphasizes expertise specifically in laptops - "LEX" directly highlighting "Laptop EXpert."
+LEXA is designed to be modern, confident, and tech-savvy, combining deep product knowledge with personalized guidance to make laptop shopping effortless.
 
 ## Features
 - Google Gemini AI for intelligent responses
-- Product recommendations
+- LEXA identity with laptop-expert guidance style
+- Laptop-first product recommendations
 - Troubleshooting assistance
 - Conversation history storage with Supabase
 - Multi-turn conversation support

@@ -49,7 +49,21 @@ if not os.getenv("GEMINI_API_KEY"):
 client = genai.Client()
 
 system_prompt = """
-You are a product recommendation and support chatbot.
+You are LEXA, which stands for Laptop EXpert Assistant.
+
+Identity and tone:
+- LEXA is modern, confident, and tech-savvy.
+- LEXA specializes in expert laptop guidance and personalized support.
+- Keep responses helpful, concise, and friendly.
+- Speak in first person as LEXA when appropriate.
+
+Name explanation for internal behavior alignment:
+LEXA stands for Laptop EXpert Assistant. The name emphasizes expertise specifically in laptops - "LEX" directly highlighting "Laptop EXpert." LEXA represents smart, expert guidance that makes laptop shopping effortless.
+
+Scope:
+- Primary focus: laptop recommendations, specs, comparisons, and buying guidance.
+- Secondary support: troubleshooting and aftersales support.
+
 Available products:
 {products}
 
@@ -75,9 +89,9 @@ def handle_troubleshooting(user_message):
     for item in troubleshooting_data:
         if item["issue"] in user_message.lower():
             steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(item["steps"])])
-            return f"Here are the troubleshooting steps:\n{steps}"
+            return f"LEXA here. Try these troubleshooting steps:\n{steps}"
 
-    return "Please describe the issue in more detail."
+    return "LEXA here. Please describe the issue in more detail so I can guide you better."
 
 def extract_intent(user_message, conversation_history=None):
     context_block = ""
@@ -281,6 +295,8 @@ def get_bot_response(user_message, session_id=None):
         {products}
 
         Instructions:
+        - Respond as LEXA (Laptop EXpert Assistant) with a modern, confident, tech-savvy tone.
+        - Keep recommendations focused on laptops and practical buying guidance whenever relevant.
         - If this is a follow-up question referring to a previously recommended product (e.g. "give me the price", "what are the specs", "show me the warranty"), identify that product from the conversation context and answer specifically about it.
         - Do not ask for clarification if the referenced product is clear from the conversation history.
         - Provide a structured, clear response.

@@ -13,7 +13,23 @@ let titlebarDeleteConfirming = false;
 const waitingMessages = [
     "Overclocking my brain... hang tight while I find those specs!",
     "Lexa is currently deep in the database. Don't close the lid just yet!",
-    "Booting up your options..."
+    "Booting up your options...",
+    "Spinning up the hard drive... yes, we still have one of those.",
+    "Fetching results faster than your last Windows update. Promise.",
+    "Lexa is connecting the dots — there are a lot of dots.",
+    "Hold on, teaching the hamsters to run faster...",
+    "Compiling awesomeness. This may take 3–5 business milliseconds.",
+    "Rummaging through the cloud... it's bigger than it looks.",
+    "Good things take time. Great things take slightly longer. Almost there.",
+    "Lexa spotted your answer — she's just untangling the cables.",
+    "Loading... because even robots need a moment to think.",
+    "We're not buffering. We're being thorough.",
+    "Asking the algorithm nicely. It said yes. Retrieving now.",
+    "Your results are being hand-crafted by tiny digital elves.",
+    "Lexa is putting on her thinking cap. It has RGB lighting.",
+    "404 boredom not found — we'll be right with you!",
+    "Running at the speed of caffeine. One sec.",
+    "Please enjoy this brief intermission while Lexa does her thing.",
 ];
 
 function enterChatMode() {
