@@ -10,12 +10,7 @@ from supabase import create_client, Client
 
 # Current session ID
 current_session_id = str(uuid.uuid4())
-
-with open("data/products.json", "r") as f:
-    products = json.load(f)
-
-with open("data/troubleshooting.json") as f:
-    troubleshooting_data = json.load(f)
+last_fetch_status = {}
 
 load_dotenv()
 
@@ -64,12 +59,9 @@ Scope:
 - Primary focus: laptop recommendations, specs, comparisons, and buying guidance.
 - Secondary support: troubleshooting and aftersales support.
 
-Available products:
-{products}
-
 Instructions:
 1. Identify what the user needs.
-2. Recommend only from available products.
+2. Recommend only from available products provided in the current prompt context.
 3. If troubleshooting, give step-by-step solution.
 4. Keep answer clear.
 """
@@ -85,10 +77,172 @@ chat = client.chats.create(
 print("Chatbot is running. Type 'exit' to quit.\n")
 
 
+def _fetch_rows(table_name: str, columns: str = "*"):
+    """Fetch rows from a Supabase table and return a list."""
+    global last_fetch_status
+    try:
+        response = supabase.table(table_name).select(columns).execute()
+        rows = response.data or []
+        last_fetch_status[table_name] = {
+            "ok": True,
+            "count": len(rows),
+            "error": None,
+            "checked_at": datetime.now().isoformat(),
+        }
+        return rows
+    except Exception as e:
+        print(f"Error fetching {table_name}: {e}")
+        last_fetch_status[table_name] = {
+            "ok": False,
+            "count": 0,
+            "error": str(e),
+            "checked_at": datetime.now().isoformat(),
+        }
+        return []
+
+
+def fetch_product_catalog():
+    """Fetch product catalog data from Supabase laptop and printer tables."""
+    laptops = _fetch_rows("laptop", "id,name,price,tags")
+    printers = _fetch_rows("printer", "id,name,price,tags")
+    return {
+        "laptop": laptops,
+        "printer": printers,
+    }
+
+
+def format_product_catalog(catalog: dict):
+    """Create a compact readable product catalog text block for prompts."""
+    laptop_rows = catalog.get("laptop", [])
+    printer_rows = catalog.get("printer", [])
+
+    lines = ["Laptops:"]
+    if laptop_rows:
+        for item in laptop_rows:
+            lines.append(
+                f"- {item.get('name', 'Unknown')} | price: {item.get('price', 'N/A')} | tags: {item.get('tags', '')}"
+            )
+    else:
+        lines.append("- None available")
+
+    lines.append("\nPrinters:")
+    if printer_rows:
+        for item in printer_rows:
+            lines.append(
+                f"- {item.get('name', 'Unknown')} | price: {item.get('price', 'N/A')} | tags: {item.get('tags', '')}"
+            )
+    else:
+        lines.append("- None available")
+
+    return "\n".join(lines)
+
+
+def _parse_troubleshooting_steps(raw_steps):
+    """Normalize troubleshooting steps from text/JSON into a list of step strings."""
+    if isinstance(raw_steps, list):
+        return [str(step).strip() for step in raw_steps if str(step).strip()]
+
+    if raw_steps is None:
+        return []
+
+    if isinstance(raw_steps, str):
+        text = raw_steps.strip()
+        if not text:
+            return []
+
+        # Accept JSON array text if the DB stores steps as serialized JSON.
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(step).strip() for step in parsed if str(step).strip()]
+            except Exception:
+                pass
+
+        if "\n" in text:
+            return [part.strip(" -\t") for part in text.splitlines() if part.strip()]
+
+        if ";" in text:
+            return [part.strip(" -\t") for part in text.split(";") if part.strip()]
+
+        return [text]
+
+    return [str(raw_steps).strip()]
+
+
+def fetch_troubleshooting_entries():
+    """Fetch troubleshooting rows from Supabase troubleshooting table."""
+    rows = _fetch_rows("troubleshooting", "device,issue,steps")
+    normalized = []
+    for row in rows:
+        normalized.append({
+            "device": (row.get("device") or "").strip(),
+            "issue": (row.get("issue") or "").strip(),
+            "steps": _parse_troubleshooting_steps(row.get("steps")),
+        })
+    return normalized
+
+
+def get_catalog_diagnostics():
+    """Return a quick health snapshot for Supabase-backed catalog tables."""
+    catalog = fetch_product_catalog()
+    troubleshooting_rows = fetch_troubleshooting_entries()
+
+    laptop_rows = catalog.get("laptop", [])
+    printer_rows = catalog.get("printer", [])
+
+    return {
+        "catalog_counts": {
+            "laptop": len(laptop_rows),
+            "printer": len(printer_rows),
+            "troubleshooting": len(troubleshooting_rows),
+        },
+        "sample_rows": {
+            "laptop": [
+                {
+                    "name": item.get("name"),
+                    "price": item.get("price"),
+                    "tags": item.get("tags"),
+                }
+                for item in laptop_rows[:3]
+            ],
+            "printer": [
+                {
+                    "name": item.get("name"),
+                    "price": item.get("price"),
+                    "tags": item.get("tags"),
+                }
+                for item in printer_rows[:3]
+            ],
+            "troubleshooting": [
+                {
+                    "device": item.get("device"),
+                    "issue": item.get("issue"),
+                    "steps_count": len(item.get("steps", [])),
+                }
+                for item in troubleshooting_rows[:3]
+            ],
+        },
+        "fetch_status": last_fetch_status,
+    }
+
+
 def handle_troubleshooting(user_message):
+    user_message_lower = user_message.lower()
+    troubleshooting_data = fetch_troubleshooting_entries()
+
     for item in troubleshooting_data:
-        if item["issue"] in user_message.lower():
-            steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(item["steps"])])
+        issue = (item.get("issue") or "").lower()
+        device = (item.get("device") or "").lower()
+        if issue and issue in user_message_lower:
+            steps_list = item.get("steps", [])
+            steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps_list)])
+            if not steps:
+                return "LEXA here. I found that issue, but no step-by-step fix is saved yet."
+
+            if device:
+                return f"LEXA here. For your {device}, try these troubleshooting steps:\n{steps}"
+
             return f"LEXA here. Try these troubleshooting steps:\n{steps}"
 
     return "LEXA here. Please describe the issue in more detail so I can guide you better."
@@ -277,6 +431,9 @@ def get_bot_response(user_message, session_id=None):
     if intent_data and intent_data.get("intent") == "troubleshooting":
         bot_reply = handle_troubleshooting(user_message)
     else:
+        catalog = fetch_product_catalog()
+        products_context = format_product_catalog(catalog)
+
         # Build a conversation context block so the LLM can resolve follow-up references.
         context_block = ""
         if recent_messages:
@@ -292,7 +449,7 @@ def get_bot_response(user_message, session_id=None):
         {intent_data}
 
         Available products:
-        {products}
+        {products_context}
 
         Instructions:
         - Respond as LEXA (Laptop EXpert Assistant) with a modern, confident, tech-savvy tone.

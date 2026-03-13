@@ -9,6 +9,7 @@ from chatbot_logic import (
     set_conversation_title,
     get_conversation_title,
     delete_conversation,
+    get_catalog_diagnostics,
 )
 import chatbot_logic
 
@@ -84,6 +85,11 @@ def remove_conversation(session_id):
         return jsonify({"status": "failed to delete conversation"}), 500
 
     return jsonify({"status": "ok", "id": session_id})
+
+
+@app.route("/debug/catalog", methods=["GET"])
+def debug_catalog():
+    return jsonify(get_catalog_diagnostics())
 
 if __name__ == "__main__":
     app.run(debug=True)

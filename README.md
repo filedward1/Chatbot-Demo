@@ -10,6 +10,7 @@ LEXA is designed to be modern, confident, and tech-savvy, combining deep product
 - LEXA identity with laptop-expert guidance style
 - Laptop-first product recommendations
 - Troubleshooting assistance
+- Product and troubleshooting data fetched directly from Supabase
 - Conversation history storage with Supabase
 - Multi-turn conversation support
 
@@ -40,8 +41,11 @@ pip install -r requirements.txt
    - Go to the SQL Editor
 
 3. Create the required tables by running the SQL from the setup script:
-   - Create `conversation` table (id UUID, created_at TIMESTAMP)
+   - Create `conversation` table (id UUID, created_at TIMESTAMP, title TEXT)
    - Create `messages` table (id UUID, conversation_id UUID, role TEXT, content TEXT, created_at TIMESTAMP)
+   - Create `laptop` table (id PK, name TEXT, price INT, tags TEXT)
+   - Create `printer` table (id PK, name TEXT, price INT, tags TEXT)
+   - Create `troubleshooting` table (device TEXT, issue TEXT, steps TEXT)
 
 ### Database Schema
 
@@ -57,6 +61,23 @@ pip install -r requirements.txt
 - `content` (TEXT)
 - `created_at` (TIMESTAMP)
 
+**laptop table:**
+- `id` (Primary Key)
+- `name` (TEXT)
+- `price` (INT)
+- `tags` (TEXT)
+
+**printer table:**
+- `id` (Primary Key)
+- `name` (TEXT)
+- `price` (INT)
+- `tags` (TEXT)
+
+**troubleshooting table:**
+- `device` (TEXT)
+- `issue` (TEXT)
+- `steps` (TEXT)
+
 ### 4. Run the Application
 ```bash
 python app.py
@@ -69,8 +90,6 @@ The chatbot will be available at `http://localhost:5000`
 - `templates/index.html` - Main HTML frontend
 - `static/style.css` - Styling
 - `static/script.js` - Frontend interactivity
-- `data/products.json` - Product database
-- `data/troubleshooting.json` - Troubleshooting guides
 - `requirements.txt` - Python dependencies
 - `setup_db.py` - Database initialization script
 
