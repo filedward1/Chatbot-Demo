@@ -339,3 +339,14 @@ def get_conversation_messages(session_id):
         return {"id": session_id, "messages": []}
 
 
+def delete_conversation(session_id: str):
+    """Delete a conversation and all of its messages."""
+    try:
+        supabase.table("messages").delete().eq("conversation_id", session_id).execute()
+        supabase.table("conversation").delete().eq("id", session_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error deleting conversation: {e}")
+        return False
+
+

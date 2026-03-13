@@ -8,6 +8,7 @@ from chatbot_logic import (
     set_current_session,
     set_conversation_title,
     get_conversation_title,
+    delete_conversation,
 )
 import chatbot_logic
 
@@ -74,6 +75,15 @@ def update_conversation_title(session_id):
         return jsonify({"status": "failed to update title"}), 500
 
     return jsonify({"status": "ok", "id": session_id, "title": title})
+
+
+@app.route("/history/<session_id>", methods=["DELETE"])
+def remove_conversation(session_id):
+    ok = delete_conversation(session_id)
+    if not ok:
+        return jsonify({"status": "failed to delete conversation"}), 500
+
+    return jsonify({"status": "ok", "id": session_id})
 
 if __name__ == "__main__":
     app.run(debug=True)

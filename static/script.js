@@ -7,6 +7,8 @@ let historyXScrollbarTimeoutId = null;
 let chatScrollbarTimeoutId = null;
 let currentConversationTitle = "New Conversation";
 let renameModalSessionId = null;
+let currentHistoryDeleteConfirmLi = null;
+let titlebarDeleteConfirming = false;
 
 const waitingMessages = [
     "Overclocking my brain... hang tight while I find those specs!",
@@ -36,6 +38,43 @@ function setConversationTitle(title) {
     }
 }
 
+function swapButtonIcon(button, src, alt) {
+    if (!button) return;
+    const icon = button.querySelector("img");
+    if (!icon) return;
+
+    const currentSrc = icon.getAttribute("src") || "";
+    const currentAlt = icon.getAttribute("alt") || "";
+    if (currentSrc === src && currentAlt === alt) return;
+
+    if (button.__iconSwapOutTimeout) {
+        clearTimeout(button.__iconSwapOutTimeout);
+        button.__iconSwapOutTimeout = null;
+    }
+
+    if (button.__iconSwapInTimeout) {
+        clearTimeout(button.__iconSwapInTimeout);
+        button.__iconSwapInTimeout = null;
+    }
+
+    button.classList.remove("icon-swap-in");
+    button.classList.add("icon-swap-out");
+
+    button.__iconSwapOutTimeout = setTimeout(() => {
+        icon.src = src;
+        icon.alt = alt;
+
+        button.classList.remove("icon-swap-out");
+        button.classList.add("icon-swap-in");
+
+        button.__iconSwapInTimeout = setTimeout(() => {
+            button.classList.remove("icon-swap-in");
+            button.__iconSwapInTimeout = null;
+        }, 180);
+        button.__iconSwapOutTimeout = null;
+    }, 120);
+}
+
 async function saveConversationTitle(sessionId, title) {
     const response = await fetch(`/history/${sessionId}/title`, {
         method: "POST",
@@ -50,6 +89,84 @@ async function saveConversationTitle(sessionId, title) {
     }
 
     return response.json();
+}
+
+async function deleteConversationById(sessionId) {
+    const response = await fetch(`/history/${sessionId}`, {
+        method: "DELETE"
+    });
+
+    if (!response.ok) {
+        throw new Error("Unable to delete conversation");
+    }
+
+    return response.json();
+}
+
+async function handleDeleteConversation(sessionId) {
+    if (!sessionId) return;
+
+    await deleteConversationById(sessionId);
+
+    if (currentSessionId === sessionId) {
+        await createNewChat();
+        return;
+    }
+
+    await loadHistory();
+}
+
+function setHistoryDeleteConfirmMode(li, enabled) {
+    if (!li) return;
+
+    const deleteBtn = li.querySelector(".history-delete-btn");
+    const editBtn = li.querySelector(".history-edit-btn");
+    const deleteIcon = deleteBtn ? deleteBtn.querySelector("img") : null;
+    const editIcon = editBtn ? editBtn.querySelector("img") : null;
+    if (!deleteBtn || !editBtn || !deleteIcon || !editIcon) return;
+
+    if (enabled) {
+        li.classList.add("confirming-delete");
+        deleteBtn.setAttribute("aria-label", "Confirm Delete Conversation");
+        editBtn.setAttribute("aria-label", "Cancel Delete Conversation");
+        swapButtonIcon(deleteBtn, "/static/image/check.svg", "Confirm Delete");
+        swapButtonIcon(editBtn, "/static/image/x.svg", "Cancel");
+        currentHistoryDeleteConfirmLi = li;
+        return;
+    }
+
+    li.classList.remove("confirming-delete");
+    deleteBtn.setAttribute("aria-label", "Delete Conversation");
+    editBtn.setAttribute("aria-label", "Edit Conversation");
+    swapButtonIcon(deleteBtn, "/static/image/trash-simple.svg", "Delete");
+    swapButtonIcon(editBtn, "/static/image/pencil-simple-line.svg", "Edit");
+
+    if (currentHistoryDeleteConfirmLi === li) {
+        currentHistoryDeleteConfirmLi = null;
+    }
+}
+
+function setTitlebarDeleteConfirmMode(enabled) {
+    const deleteBtn = document.getElementById("conversation-delete");
+    const editBtn = document.getElementById("conversation-edit");
+    const deleteIcon = deleteBtn ? deleteBtn.querySelector("img") : null;
+    const editIcon = editBtn ? editBtn.querySelector("img") : null;
+    if (!deleteBtn || !editBtn || !deleteIcon || !editIcon) return;
+
+    if (enabled) {
+        titlebarDeleteConfirming = true;
+        deleteBtn.setAttribute("aria-label", "Confirm Delete Conversation");
+        editBtn.setAttribute("aria-label", "Cancel Delete Conversation");
+        swapButtonIcon(deleteBtn, "/static/image/check.svg", "Confirm Delete");
+        swapButtonIcon(editBtn, "/static/image/x.svg", "Cancel");
+        return;
+    }
+
+    titlebarDeleteConfirming = false;
+    deleteBtn.setAttribute("aria-label", "Delete Conversation");
+    editBtn.setAttribute("aria-label", "Edit Conversation Title");
+    swapButtonIcon(deleteBtn, "/static/image/trash-simple.svg", "Delete");
+    swapButtonIcon(editBtn, "/static/image/pencil-simple-line.svg", "Edit");
 }
 
 function openRenameModal(sessionId, currentTitle = "") {
@@ -96,6 +213,11 @@ async function submitRenameModal() {
 
 async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
     if (!li || li.classList.contains("editing-inline")) return;
+
+    // Cancel delete confirmation mode before switching into rename mode.
+    if (li.classList.contains("confirming-delete")) {
+        setHistoryDeleteConfirmMode(li, false);
+    }
 
     const titleEl = li.querySelector(".history-title");
     if (!titleEl) return;
@@ -355,6 +477,8 @@ async function sendMessage() {
 
 function applyNewChatUIState() {
     conversationStarted = false;
+    setTitlebarDeleteConfirmMode(false);
+    currentHistoryDeleteConfirmLi = null;
 
     const container = document.querySelector('.chat-container');
     container.classList.add('centered');
@@ -510,6 +634,7 @@ async function loadHistory() {
 
     const historyList = document.getElementById("history-list");
     historyList.innerHTML = "";
+    currentHistoryDeleteConfirmLi = null;
 
     historyCache.forEach(({ id, title, createdAt }) => {
         const li = document.createElement("li");
@@ -523,12 +648,47 @@ async function loadHistory() {
             ? `${new Date(createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
             : "";
 
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "history-delete-btn";
+        deleteBtn.setAttribute("aria-label", "Delete Conversation");
+        deleteBtn.innerHTML = '<img src="/static/image/trash-simple.svg" alt="Delete" />';
+        deleteBtn.addEventListener("click", async (event) => {
+            event.stopPropagation();
+            if (li.classList.contains("editing-inline")) {
+                return;
+            }
+
+            if (currentHistoryDeleteConfirmLi && currentHistoryDeleteConfirmLi !== li) {
+                setHistoryDeleteConfirmMode(currentHistoryDeleteConfirmLi, false);
+            }
+
+            if (!li.classList.contains("confirming-delete")) {
+                setHistoryDeleteConfirmMode(li, true);
+                return;
+            }
+
+            try {
+                await handleDeleteConversation(id);
+            } catch (error) {
+                console.error("[history delete] Failed to delete conversation:", error);
+                appendMessage("bot", "Unable to delete conversation right now.");
+            } finally {
+                setHistoryDeleteConfirmMode(li, false);
+            }
+        });
+
         const editBtn = document.createElement("button");
         editBtn.className = "history-edit-btn";
         editBtn.setAttribute("aria-label", "Edit Conversation");
         editBtn.innerHTML = '<img src="/static/image/pencil-simple-line.svg" alt="Edit" />';
         editBtn.addEventListener("click", async (event) => {
             event.stopPropagation();
+
+            if (li.classList.contains("confirming-delete")) {
+                setHistoryDeleteConfirmMode(li, false);
+                return;
+            }
+
             if (li.classList.contains("editing-inline") && typeof li.__finishInlineRename === "function") {
                 await li.__finishInlineRename(true);
                 return;
@@ -538,6 +698,7 @@ async function loadHistory() {
 
         li.appendChild(titleEl);
         li.appendChild(metaEl);
+        li.appendChild(deleteBtn);
         li.appendChild(editBtn);
         li.onclick = () => loadConversation(id, title);
         historyList.appendChild(li);
@@ -550,6 +711,7 @@ async function loadHistory() {
 
 async function loadConversation(sessionId, title = null) {
     enterChatMode();
+    setTitlebarDeleteConfirmMode(false);
     currentSessionId = sessionId;
     if (title) {
         setConversationTitle(title);
@@ -645,7 +807,33 @@ window.onload = () => {
         conversationEdit.addEventListener('click', async () => {
             if (!currentSessionId) return;
 
+            if (titlebarDeleteConfirming) {
+                setTitlebarDeleteConfirmMode(false);
+                return;
+            }
+
             openRenameModal(currentSessionId, currentConversationTitle);
+        });
+    }
+
+    const conversationDelete = document.getElementById('conversation-delete');
+    if (conversationDelete) {
+        conversationDelete.addEventListener('click', async () => {
+            if (!currentSessionId) return;
+
+            if (!titlebarDeleteConfirming) {
+                setTitlebarDeleteConfirmMode(true);
+                return;
+            }
+
+            try {
+                await handleDeleteConversation(currentSessionId);
+            } catch (error) {
+                console.error("[titlebar delete] Failed to delete conversation:", error);
+                appendMessage("bot", "Unable to delete conversation right now.");
+            } finally {
+                setTitlebarDeleteConfirmMode(false);
+            }
         });
     }
 
