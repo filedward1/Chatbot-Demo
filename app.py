@@ -7,6 +7,7 @@ from chatbot_logic import (
     create_conversation_in_db,
     set_current_session,
     set_conversation_title,
+    get_conversation_title,
 )
 import chatbot_logic
 
@@ -27,7 +28,12 @@ def chat():
 
     try:
         bot_reply = get_bot_response(user_message, session_id=session_id)
-        return jsonify({"reply": bot_reply, "session_id": chatbot_logic.current_session_id})
+        title = get_conversation_title(chatbot_logic.current_session_id)
+        return jsonify({
+            "reply": bot_reply,
+            "session_id": chatbot_logic.current_session_id,
+            "title": title,
+        })
     except Exception as e:
         print(f"Error in /chat: {e}")
         return jsonify({"error": str(e)}), 500

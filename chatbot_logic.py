@@ -150,14 +150,30 @@ def set_conversation_title(session_id: str, title: str):
 def maybe_generate_title_for_session(session_id: str):
     """Generate a short conversation title based on the first few messages."""
     # Don't regenerate if a title already exists.
-    if get_conversation_title(session_id):
-        return
+    existing_title = get_conversation_title(session_id)
+    if existing_title:
+        return existing_title
 
     # Pull the first few messages for context.
     conv = get_conversation_messages(session_id)
     messages = conv.get("messages", [])
     if not messages:
-        return
+        return None
+
+    # Build a deterministic fallback title from the first user message.
+    first_user_message = ""
+    for msg in messages:
+        if msg.get("role") == "user" and msg.get("content"):
+            first_user_message = msg.get("content", "").strip()
+            break
+
+    fallback_title = "New Conversation"
+    if first_user_message:
+        fallback_title = " ".join(first_user_message.split())
+        if len(fallback_title) > 80:
+            fallback_title = fallback_title[:80].rsplit(" ", 1)[0]
+        if not fallback_title:
+            fallback_title = "New Conversation"
 
     # Use up to the first 4 messages (user+bot pairs) to create a title.
     sample = messages[:4]
@@ -181,16 +197,21 @@ def maybe_generate_title_for_session(session_id: str):
 
         title = response.text.strip().strip('"').strip("'")
         if not title:
-            return
+            title = fallback_title
 
         # Keep it reasonably short.
         if len(title) > 80:
             title = title[:80].rsplit(" ", 1)[0]
 
+        if not title:
+            title = fallback_title
+
         set_conversation_title(session_id, title)
+        return title
     except Exception:
-        # Fail silently; conversation can still function normally.
-        return
+        # If LLM title generation fails, still set a deterministic fallback title.
+        set_conversation_title(session_id, fallback_title)
+        return fallback_title
 
 
 def set_current_session(session_id: str):

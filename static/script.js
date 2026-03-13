@@ -282,10 +282,6 @@ async function sendMessage() {
     const userMessage = inputField.value.trim();
     if (!userMessage) return;
 
-    if (!currentConversationTitle || currentConversationTitle === "New Conversation") {
-        setConversationTitle(userMessage);
-    }
-
     // Display user message as a right-aligned chat bubble.
     appendMessage("user", userMessage);
 
@@ -328,6 +324,11 @@ async function sendMessage() {
         // Keep session tracking in sync (if server returns it)
         if (data.session_id) {
             currentSessionId = data.session_id;
+        }
+
+        // Apply auto-generated server title as soon as it is available.
+        if (data.title) {
+            setConversationTitle(data.title);
         }
 
         // Remove waiting indicator once response arrives.
