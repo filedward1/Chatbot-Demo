@@ -3,6 +3,9 @@ let conversationStarted = false;
 let sidebarPinnedOpen = false;
 let historyCache = [];
 let waitingTextIntervalId = null;
+let titleLoadingIntervalId = null;
+let inputPlaceholderIntervalId = null;
+let initialPlaceholderTimeoutId = null;
 let historyXScrollbarTimeoutId = null;
 let chatScrollbarTimeoutId = null;
 let currentConversationTitle = "New Conversation";
@@ -32,9 +35,176 @@ const waitingMessages = [
     "Please enjoy this brief intermission while Lexa does her thing.",
 ];
 
+const waitingTitleMessages = [
+    "Lexa is choosing her words carefully...",
+    "Searching for the perfect title...",
+    "Consulting the council of catchy names...",
+    "Shaking the magic 8-ball for a title...",
+    "Flipping through the thesaurus...",
+    "Running titles through the vibe check...",
+    "Summoning the muse...",
+    "Please hold — naming things is hard.",
+    "Almost something catchy...",
+    "Words are being arranged...",
+];
+
+const initialInputPlaceholderMessages = [
+    "Type something. Lexa is listening...",
+    "What's on your mind?",
+    "Ask me anything...",
+    "Go ahead, don't be shy...",
+    "Lexa is all ears...",
+    "Start typing to get started...",
+    "What are we building today?",
+    "Your idea goes here...",
+    "Hit me with it...",
+    "Talk to Lexa...",
+];
+
+const initiatedInputPlaceholderMessages = [
+    "Lexa is ready for your next move...",
+    "What's next?",
+    "Keep going...",
+    "Your turn...",
+    "Fire away...",
+    "What else?",
+    "Continue the thought...",
+    "Lexa is waiting...",
+    "Don't stop now...",
+    "Next question?",
+];
+
+function pickRandomMessageFrom(messages, excludeIndex = -1) {
+    if (!messages || !messages.length) {
+        return { index: -1, text: "Loading..." };
+    }
+
+    let index = Math.floor(Math.random() * messages.length);
+    if (messages.length > 1) {
+        while (index === excludeIndex) {
+            index = Math.floor(Math.random() * messages.length);
+        }
+    }
+
+    return { index, text: messages[index] };
+}
+
+function startInputPlaceholderCycle(messages) {
+    const inputField = document.getElementById("user-input");
+    if (!inputField || !messages || !messages.length) return;
+
+    if (inputPlaceholderIntervalId) {
+        clearInterval(inputPlaceholderIntervalId);
+        inputPlaceholderIntervalId = null;
+    }
+
+    let { index, text } = pickRandomMessageFrom(messages);
+    inputField.placeholder = text;
+
+    inputPlaceholderIntervalId = setInterval(() => {
+        const picked = pickRandomMessageFrom(messages, index);
+        index = picked.index;
+        inputField.placeholder = picked.text;
+    }, 2600);
+}
+
+function ensureAnimatedPlaceholderElement() {
+    const inputArea = document.querySelector(".input-area");
+    if (!inputArea) return null;
+
+    let el = inputArea.querySelector(".animated-placeholder");
+    if (el) return el;
+
+    el = document.createElement("span");
+    el.className = "animated-placeholder";
+    inputArea.appendChild(el);
+    return el;
+}
+
+function updateAnimatedPlaceholderVisibility() {
+    const inputField = document.getElementById("user-input");
+    const animatedEl = ensureAnimatedPlaceholderElement();
+    if (!inputField || !animatedEl) return;
+
+    const shouldShow = !conversationStarted && !inputField.value;
+    animatedEl.classList.toggle("visible", shouldShow);
+}
+
+function stopInitialPlaceholderTypewriter() {
+    if (initialPlaceholderTimeoutId) {
+        clearTimeout(initialPlaceholderTimeoutId);
+        initialPlaceholderTimeoutId = null;
+    }
+}
+
+function startInitialPlaceholderTypewriter(messages) {
+    const inputField = document.getElementById("user-input");
+    const animatedEl = ensureAnimatedPlaceholderElement();
+    if (!inputField || !animatedEl || !messages || !messages.length) return;
+
+    stopInitialPlaceholderTypewriter();
+
+    inputField.placeholder = "";
+    let previousMessageIndex = -1;
+
+    const runCycle = () => {
+        if (conversationStarted) {
+            updateAnimatedPlaceholderVisibility();
+            return;
+        }
+
+        const picked = pickRandomMessageFrom(messages, previousMessageIndex);
+        previousMessageIndex = picked.index;
+        const message = picked.text;
+
+        let charIndex = 0;
+
+        const typeStep = () => {
+            if (conversationStarted) return;
+
+            animatedEl.textContent = message.slice(0, charIndex);
+            updateAnimatedPlaceholderVisibility();
+
+            if (charIndex < message.length) {
+                charIndex += 1;
+                initialPlaceholderTimeoutId = setTimeout(typeStep, 46);
+                return;
+            }
+
+            initialPlaceholderTimeoutId = setTimeout(deleteStep, 1150);
+        };
+
+        const deleteStep = () => {
+            if (conversationStarted) return;
+
+            animatedEl.textContent = message.slice(0, charIndex);
+            updateAnimatedPlaceholderVisibility();
+
+            if (charIndex > 0) {
+                charIndex -= 1;
+                initialPlaceholderTimeoutId = setTimeout(deleteStep, 28);
+                return;
+            }
+
+            initialPlaceholderTimeoutId = setTimeout(runCycle, 240);
+        };
+
+        typeStep();
+    };
+
+    runCycle();
+}
+
 function enterChatMode() {
     if (conversationStarted) return;
     conversationStarted = true;
+    stopInitialPlaceholderTypewriter();
+    const inputField = document.getElementById("user-input");
+    if (inputField) {
+        const picked = pickRandomMessageFrom(initiatedInputPlaceholderMessages);
+        inputField.placeholder = picked.text;
+    }
+    updateAnimatedPlaceholderVisibility();
 
     const container = document.querySelector('.chat-container');
     container.classList.remove('centered');
@@ -52,6 +222,146 @@ function setConversationTitle(title) {
         titleEl.textContent = normalized;
         titleEl.title = normalized;
     }
+}
+
+function clearTitleLoadingRemarks() {
+    const titleEl = document.getElementById("conversation-title");
+    if (titleLoadingIntervalId) {
+        clearInterval(titleLoadingIntervalId);
+        titleLoadingIntervalId = null;
+    }
+    if (titleEl) {
+        titleEl.classList.remove("title-loading", "typing-reveal");
+        titleEl.style.removeProperty("--typing-ch");
+        const textEl = titleEl.querySelector(".title-loading-text");
+        if (textEl) {
+            textEl.classList.remove("typing-reveal");
+            textEl.style.removeProperty("--typing-ch");
+        }
+    }
+}
+
+function setTitleLoadingText(titleEl, text) {
+    if (!titleEl) return;
+    let textEl = titleEl.querySelector(".title-loading-text");
+    if (!textEl) {
+        titleEl.textContent = "";
+        textEl = document.createElement("span");
+        textEl.className = "title-loading-text";
+        titleEl.appendChild(textEl);
+    }
+
+    textEl.textContent = text;
+    titleEl.title = text;
+    textEl.style.setProperty("--typing-ch", `${Math.max(text.length + 4, 1)}ch`);
+    textEl.classList.remove("typing-reveal");
+    void textEl.offsetWidth;
+    textEl.classList.add("typing-reveal");
+}
+
+function startTitleLoadingRemarks() {
+    const titleEl = document.getElementById("conversation-title");
+    if (!titleEl) return;
+
+    clearTitleLoadingRemarks();
+    titleEl.classList.add("title-loading");
+
+    let { index, text } = pickRandomMessageFrom(waitingTitleMessages);
+    setTitleLoadingText(titleEl, text);
+
+    titleLoadingIntervalId = setInterval(() => {
+        const picked = pickRandomMessageFrom(waitingTitleMessages, index);
+        index = picked.index;
+        setTitleLoadingText(titleEl, picked.text);
+    }, 2400);
+}
+
+function createSpinnerIcon(extraClass = "") {
+    const spinner = document.createElement("img");
+    spinner.src = "/static/image/spinner-gap.svg";
+    spinner.alt = "Loading";
+    spinner.className = `spinner-icon ${extraClass}`.trim();
+    return spinner;
+}
+
+function pickRandomWaitingMessage(excludeIndex = -1) {
+    if (!waitingMessages.length) {
+        return { index: -1, text: "Loading..." };
+    }
+
+    let index = Math.floor(Math.random() * waitingMessages.length);
+    if (waitingMessages.length > 1) {
+        while (index === excludeIndex) {
+            index = Math.floor(Math.random() * waitingMessages.length);
+        }
+    }
+
+    return { index, text: waitingMessages[index] };
+}
+
+function setRenameModalLoading(enabled) {
+    const modal = document.getElementById("rename-modal");
+    if (!modal) return;
+
+    modal.classList.toggle("loading-state", enabled);
+}
+
+function openRenameLoadingOverlay() {
+    const modal = document.getElementById("rename-modal");
+    if (!modal) return;
+
+    modal.classList.add("open");
+    setRenameModalLoading(true);
+}
+
+function createHistoryLoadingItem() {
+    const li = document.createElement("li");
+    li.className = "history-loading-li";
+
+    const spinner = createSpinnerIcon();
+    const text = document.createElement("span");
+    text.textContent = "Loading";
+
+    li.appendChild(spinner);
+    li.appendChild(text);
+    return li;
+}
+
+function setHistoryActionLoadingState(li, enabled) {
+    if (!li) return;
+
+    const titleEl = li.querySelector(".history-title");
+    const metaEl = li.querySelector(".history-meta");
+    if (!titleEl) return;
+
+    if (enabled) {
+        if (!li.dataset.originalTitle) {
+            li.dataset.originalTitle = titleEl.textContent || "Untitled";
+        }
+
+        titleEl.textContent = "loading";
+        if (metaEl) {
+            metaEl.textContent = "";
+        }
+
+        let spinnerWrap = li.querySelector(".history-action-spinner");
+        if (!spinnerWrap) {
+            spinnerWrap = document.createElement("div");
+            spinnerWrap.className = "history-action-spinner";
+            spinnerWrap.appendChild(createSpinnerIcon());
+            li.appendChild(spinnerWrap);
+        }
+
+        li.classList.add("history-row-action-loading");
+        return;
+    }
+
+    if (li.dataset.originalTitle) {
+        titleEl.textContent = li.dataset.originalTitle;
+        delete li.dataset.originalTitle;
+    }
+
+    li.classList.remove("history-row-action-loading");
 }
 
 function swapButtonIcon(button, src, alt) {
@@ -193,6 +503,7 @@ function openRenameModal(sessionId, currentTitle = "") {
     if (!modal || !input) return;
 
     renameModalSessionId = sessionId;
+    setRenameModalLoading(false);
     input.value = (currentTitle || "").trim() || "Untitled";
 
     modal.classList.add("open");
@@ -207,6 +518,7 @@ function closeRenameModal() {
     if (!modal) return;
 
     modal.classList.remove("open");
+    modal.classList.remove("loading-state");
     renameModalSessionId = null;
 }
 
@@ -217,18 +529,25 @@ async function submitRenameModal() {
     const cleanTitle = input.value.trim();
     if (!cleanTitle) return;
 
-    await saveConversationTitle(renameModalSessionId, cleanTitle);
+    setRenameModalLoading(true);
 
-    if (currentSessionId === renameModalSessionId) {
-        setConversationTitle(cleanTitle);
+    try {
+        await saveConversationTitle(renameModalSessionId, cleanTitle);
+
+        if (currentSessionId === renameModalSessionId) {
+            setConversationTitle(cleanTitle);
+        }
+
+        closeRenameModal();
+        await loadHistory();
+    } catch (error) {
+        setRenameModalLoading(false);
+        throw error;
     }
-
-    closeRenameModal();
-    await loadHistory();
 }
 
 async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
-    if (!li || li.classList.contains("editing-inline")) return;
+    if (!li || li.classList.contains("editing-inline") || li.classList.contains("history-row-action-loading")) return;
 
     // Cancel delete confirmation mode before switching into rename mode.
     if (li.classList.contains("confirming-delete")) {
@@ -288,6 +607,10 @@ async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
             return;
         }
 
+        input.replaceWith(titleEl);
+        li.classList.remove("editing-inline");
+        setHistoryActionLoadingState(li, true);
+
         try {
             await saveConversationTitle(sessionId, cleanTitle);
             if (currentSessionId === sessionId) {
@@ -296,8 +619,7 @@ async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
             await loadHistory();
         } catch (error) {
             console.error("[inline rename] Failed to save title:", error);
-            input.replaceWith(titleEl);
-            li.classList.remove("editing-inline");
+            setHistoryActionLoadingState(li, false);
             appendMessage("bot", "Unable to rename conversation right now.");
         }
     };
@@ -385,16 +707,20 @@ function createWaitingIndicator() {
     const waitingText = document.createElement("div");
     waitingText.className = "waiting-text";
 
+    const waitingSpinner = createSpinnerIcon("waiting-spinner");
+
     row.appendChild(avatar);
+    row.appendChild(waitingSpinner);
     row.appendChild(waitingText);
     chatBox.appendChild(row);
 
-    let index = 0;
-    setWaitingText(waitingText, waitingMessages[index]);
+    let { index, text } = pickRandomMessageFrom(waitingMessages);
+    setWaitingText(waitingText, text);
 
     waitingTextIntervalId = setInterval(() => {
-        index = (index + 1) % waitingMessages.length;
-        setWaitingText(waitingText, waitingMessages[index]);
+        const picked = pickRandomMessageFrom(waitingMessages, index);
+        index = picked.index;
+        setWaitingText(waitingText, picked.text);
     }, 2400);
 
     return row;
@@ -420,6 +746,8 @@ async function sendMessage() {
     const userMessage = inputField.value.trim();
     if (!userMessage) return;
 
+    const shouldShowTitleLoading = !currentConversationTitle || currentConversationTitle === "New Conversation";
+
     // Display user message as a right-aligned chat bubble.
     appendMessage("user", userMessage);
 
@@ -429,6 +757,10 @@ async function sendMessage() {
 
     // Add rotating waiting status indicator (no bubble container).
     createWaitingIndicator();
+
+    if (shouldShowTitleLoading) {
+        startTitleLoadingRemarks();
+    }
 
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -467,6 +799,10 @@ async function sendMessage() {
         // Apply auto-generated server title as soon as it is available.
         if (data.title) {
             setConversationTitle(data.title);
+            clearTitleLoadingRemarks();
+        } else if (shouldShowTitleLoading) {
+            setConversationTitle("New Conversation");
+            clearTitleLoadingRemarks();
         }
 
         // Remove waiting indicator once response arrives.
@@ -482,6 +818,10 @@ async function sendMessage() {
     } catch (error) {
         console.error("[sendMessage] Fetch /chat failed:", error);
         clearWaitingIndicator();
+        if (shouldShowTitleLoading) {
+            setConversationTitle("New Conversation");
+            clearTitleLoadingRemarks();
+        }
         appendMessage("bot", "Error connecting to server.");
     }
 
@@ -493,6 +833,12 @@ async function sendMessage() {
 
 function applyNewChatUIState() {
     conversationStarted = false;
+    if (inputPlaceholderIntervalId) {
+        clearInterval(inputPlaceholderIntervalId);
+        inputPlaceholderIntervalId = null;
+    }
+    startInitialPlaceholderTypewriter(initialInputPlaceholderMessages);
+    clearTitleLoadingRemarks();
     setTitlebarDeleteConfirmMode(false);
     currentHistoryDeleteConfirmLi = null;
 
@@ -511,6 +857,7 @@ function applyNewChatUIState() {
         inputField.value = "";
         inputField.disabled = false;
     }
+    updateAnimatedPlaceholderVisibility();
 
     const sendButton = document.getElementById("send-btn");
     if (sendButton) sendButton.disabled = false;
@@ -638,6 +985,10 @@ function toggleSidebar() {
 }
 
 async function loadHistory() {
+    const historyList = document.getElementById("history-list");
+    historyList.innerHTML = "";
+    historyList.appendChild(createHistoryLoadingItem());
+
     const response = await fetch("/history");
     const data = await response.json();
 
@@ -648,7 +999,6 @@ async function loadHistory() {
         createdAt: item.created_at || null,
     }));
 
-    const historyList = document.getElementById("history-list");
     historyList.innerHTML = "";
     currentHistoryDeleteConfirmLi = null;
 
@@ -670,7 +1020,7 @@ async function loadHistory() {
         deleteBtn.innerHTML = '<img src="/static/image/trash-simple.svg" alt="Delete" />';
         deleteBtn.addEventListener("click", async (event) => {
             event.stopPropagation();
-            if (li.classList.contains("editing-inline")) {
+            if (li.classList.contains("editing-inline") || li.classList.contains("history-row-action-loading")) {
                 return;
             }
 
@@ -684,12 +1034,13 @@ async function loadHistory() {
             }
 
             try {
+                setHistoryDeleteConfirmMode(li, false);
+                setHistoryActionLoadingState(li, true);
                 await handleDeleteConversation(id);
             } catch (error) {
                 console.error("[history delete] Failed to delete conversation:", error);
+                setHistoryActionLoadingState(li, false);
                 appendMessage("bot", "Unable to delete conversation right now.");
-            } finally {
-                setHistoryDeleteConfirmMode(li, false);
             }
         });
 
@@ -699,6 +1050,10 @@ async function loadHistory() {
         editBtn.innerHTML = '<img src="/static/image/pencil-simple-line.svg" alt="Edit" />';
         editBtn.addEventListener("click", async (event) => {
             event.stopPropagation();
+
+            if (li.classList.contains("history-row-action-loading")) {
+                return;
+            }
 
             if (li.classList.contains("confirming-delete")) {
                 setHistoryDeleteConfirmMode(li, false);
@@ -769,6 +1124,9 @@ window.onload = () => {
             event.preventDefault();
             sendMessage();
         }
+    });
+    inputField.addEventListener('input', () => {
+        updateAnimatedPlaceholderVisibility();
     });
 
     const newChatBtn = document.getElementById('new-chat-btn');
@@ -843,11 +1201,13 @@ window.onload = () => {
             }
 
             try {
+                openRenameLoadingOverlay();
                 await handleDeleteConversation(currentSessionId);
             } catch (error) {
                 console.error("[titlebar delete] Failed to delete conversation:", error);
                 appendMessage("bot", "Unable to delete conversation right now.");
             } finally {
+                closeRenameModal();
                 setTitlebarDeleteConfirmMode(false);
             }
         });
@@ -927,6 +1287,13 @@ window.onload = () => {
     }
 
     // No auto collapse on mouse leave: sidebar stays in chosen state.
+
+    if (inputPlaceholderIntervalId) {
+        clearInterval(inputPlaceholderIntervalId);
+        inputPlaceholderIntervalId = null;
+    }
+    startInitialPlaceholderTypewriter(initialInputPlaceholderMessages);
+    updateAnimatedPlaceholderVisibility();
 
     loadHistory();
 

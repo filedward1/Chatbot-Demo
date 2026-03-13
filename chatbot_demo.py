@@ -17,11 +17,17 @@ def build_products_context(supabase: Client):
     laptops = fetch_rows(supabase, "laptop", "id,name,price,tags")
     printers = fetch_rows(supabase, "printer", "id,name,price,tags")
 
+    def format_php_price(value):
+        try:
+            return f"Php (₱){int(value):,}"
+        except Exception:
+            return "Php (₱)N/A"
+
     lines = ["Laptops:"]
     if laptops:
         for item in laptops:
             lines.append(
-                f"- {item.get('name', 'Unknown')} | price: {item.get('price', 'N/A')} | tags: {item.get('tags', '')}"
+                f"- {item.get('name', 'Unknown')} | price: {format_php_price(item.get('price'))} | tags: {item.get('tags', '')}"
             )
     else:
         lines.append("- None available")
@@ -30,7 +36,7 @@ def build_products_context(supabase: Client):
     if printers:
         for item in printers:
             lines.append(
-                f"- {item.get('name', 'Unknown')} | price: {item.get('price', 'N/A')} | tags: {item.get('tags', '')}"
+                f"- {item.get('name', 'Unknown')} | price: {format_php_price(item.get('price'))} | tags: {item.get('tags', '')}"
             )
     else:
         lines.append("- None available")

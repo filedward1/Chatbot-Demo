@@ -117,10 +117,17 @@ def format_product_catalog(catalog: dict):
     printer_rows = catalog.get("printer", [])
 
     lines = ["Laptops:"]
+
+    def format_php_price(value):
+        try:
+            return f"Php (₱){int(value):,}"
+        except Exception:
+            return "Php (₱)N/A"
+
     if laptop_rows:
         for item in laptop_rows:
             lines.append(
-                f"- {item.get('name', 'Unknown')} | price: {item.get('price', 'N/A')} | tags: {item.get('tags', '')}"
+                f"- {item.get('name', 'Unknown')} | price: {format_php_price(item.get('price'))} | tags: {item.get('tags', '')}"
             )
     else:
         lines.append("- None available")
@@ -129,7 +136,7 @@ def format_product_catalog(catalog: dict):
     if printer_rows:
         for item in printer_rows:
             lines.append(
-                f"- {item.get('name', 'Unknown')} | price: {item.get('price', 'N/A')} | tags: {item.get('tags', '')}"
+                f"- {item.get('name', 'Unknown')} | price: {format_php_price(item.get('price'))} | tags: {item.get('tags', '')}"
             )
     else:
         lines.append("- None available")
