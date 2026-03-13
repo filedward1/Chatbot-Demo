@@ -7,8 +7,8 @@ from chatbot_logic import (
     create_conversation_in_db,
     set_current_session,
     set_conversation_title,
-    current_session_id,
 )
+import chatbot_logic
 
 app = Flask(__name__)
 
@@ -18,11 +18,19 @@ def home():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.json.get("message")
-    session_id = request.json.get("session_id")
+    payload = request.get_json(silent=True) or {}
+    user_message = payload.get("message")
+    session_id = payload.get("session_id")
 
-    bot_reply = get_bot_response(user_message, session_id=session_id)
-    return jsonify({"reply": bot_reply, "session_id": current_session_id})
+    if not user_message:
+        return jsonify({"error": "missing message"}), 400
+
+    try:
+        bot_reply = get_bot_response(user_message, session_id=session_id)
+        return jsonify({"reply": bot_reply, "session_id": chatbot_logic.current_session_id})
+    except Exception as e:
+        print(f"Error in /chat: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/reset", methods=["POST"])
 def reset():

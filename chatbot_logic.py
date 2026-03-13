@@ -79,17 +79,26 @@ def handle_troubleshooting(user_message):
 
     return "Please describe the issue in more detail."
 
-def extract_intent(user_message):
+def extract_intent(user_message, conversation_history=None):
+    context_block = ""
+    if conversation_history:
+        formatted = "\n".join(
+            [f"{m['role'].capitalize()}: {m['content']}" for m in conversation_history[-6:]]
+        )
+        context_block = f"Recent conversation:\n{formatted}\n\n"
+
     intent_prompt = f"""
-    Analyze this message:
+    {context_block}Analyze this message:
 
     "{user_message}"
 
     Extract:
-    - intent (recommendation, troubleshooting, aftersales)
-    - product_type (laptop, printer, unknown)
+    - intent (recommendation, troubleshooting, aftersales, product_detail, or general)
+    - product_type (laptop, printer, or the specific product name/type being referred to based on the conversation; use "unknown" only if truly unclear)
     - features (list)
+    - context_product (if this is a follow-up about a previously discussed product, name it here; otherwise null)
 
+    Use the recent conversation to resolve vague references (e.g. "its price", "give me the specs", "what about the warranty").
     Return JSON only.
     """
 
@@ -224,19 +233,36 @@ def get_bot_response(user_message, session_id=None):
     if session_id:
         set_current_session(session_id)
 
-    intent_data = extract_intent(user_message)
+    # Fetch recent messages so vague follow-ups can be resolved with context.
+    conv = get_conversation_messages(current_session_id)
+    recent_messages = conv.get("messages", [])[-6:]
+
+    intent_data = extract_intent(user_message, conversation_history=recent_messages)
 
     if intent_data and intent_data.get("intent") == "troubleshooting":
         bot_reply = handle_troubleshooting(user_message)
     else:
+        # Build a conversation context block so the LLM can resolve follow-up references.
+        context_block = ""
+        if recent_messages:
+            formatted_history = "\n".join(
+                [f"{m['role'].capitalize()}: {m['content']}" for m in recent_messages]
+            )
+            context_block = f"Recent conversation:\n{formatted_history}\n\n"
+
         prompt = f"""
+        {context_block}User message: {user_message}
+
         User intent:
         {intent_data}
 
         Available products:
         {products}
 
-        Provide a structured response.
+        Instructions:
+        - If this is a follow-up question referring to a previously recommended product (e.g. "give me the price", "what are the specs", "show me the warranty"), identify that product from the conversation context and answer specifically about it.
+        - Do not ask for clarification if the referenced product is clear from the conversation history.
+        - Provide a structured, clear response.
         """
         response = chat.send_message(prompt)
         bot_reply = response.text

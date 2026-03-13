@@ -157,6 +157,7 @@ async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
             }
             await loadHistory();
         } catch (error) {
+            console.error("[inline rename] Failed to save title:", error);
             input.replaceWith(titleEl);
             li.classList.remove("editing-inline");
             appendMessage("bot", "Unable to rename conversation right now.");
@@ -306,7 +307,23 @@ async function sendMessage() {
             body: JSON.stringify({ message: userMessage, session_id: currentSessionId })
         });
 
-        const data = await response.json();
+        const rawBody = await response.text();
+        let data = null;
+        try {
+            data = rawBody ? JSON.parse(rawBody) : {};
+        } catch (parseError) {
+            console.error("[sendMessage] /chat returned non-JSON body:", {
+                status: response.status,
+                statusText: response.statusText,
+                bodyPreview: rawBody.slice(0, 500)
+            });
+            throw parseError;
+        }
+
+        if (!response.ok) {
+            const serverError = (data && (data.error || data.message)) || `HTTP ${response.status}`;
+            throw new Error(serverError);
+        }
 
         // Keep session tracking in sync (if server returns it)
         if (data.session_id) {
@@ -324,6 +341,7 @@ async function sendMessage() {
         loadHistory();
 
     } catch (error) {
+        console.error("[sendMessage] Fetch /chat failed:", error);
         clearWaitingIndicator();
         appendMessage("bot", "Error connecting to server.");
     }
@@ -374,6 +392,7 @@ async function createNewChat() {
         const data = await response.json();
         currentSessionId = data.session_id || null;
     } catch (error) {
+        console.error("[createNewChat] Fetch /reset failed:", error);
         // Keep the UI usable even if reset API is temporarily unavailable.
         currentSessionId = null;
     }
@@ -642,6 +661,7 @@ window.onload = () => {
             try {
                 await submitRenameModal();
             } catch (error) {
+                console.error("[renameSave] submitRenameModal failed:", error);
                 appendMessage("bot", "Unable to rename conversation right now.");
             }
         });
@@ -655,6 +675,7 @@ window.onload = () => {
                 try {
                     await submitRenameModal();
                 } catch (error) {
+                    console.error("[renameInput Enter] submitRenameModal failed:", error);
                     appendMessage("bot", "Unable to rename conversation right now.");
                 }
             }
