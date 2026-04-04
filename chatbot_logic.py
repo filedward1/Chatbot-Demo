@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from google.genai import types
 import os
 import json
+import re
 
 import uuid
 from datetime import datetime
@@ -177,17 +178,136 @@ def _parse_troubleshooting_steps(raw_steps):
     return [str(raw_steps).strip()]
 
 
+def _get_first_present_value(row: dict, candidate_keys):
+    """Return the first non-empty value from candidate keys in a row."""
+    for key in candidate_keys:
+        if key in row and row.get(key) not in (None, ""):
+            return row.get(key)
+    return None
+
+
 def fetch_troubleshooting_entries():
     """Fetch troubleshooting rows from Supabase troubleshooting table."""
-    rows = _fetch_rows("troubleshooting", "device,issue,steps")
+    # Use * because the new schema includes spaced/parenthesized column names.
+    rows = _fetch_rows("troubleshooting", "*")
     normalized = []
     for row in rows:
+        brand = _get_first_present_value(
+            row,
+            ["Brand", "brand"],
+        )
+        warranty_link = _get_first_present_value(
+            row,
+            [
+                "Warranty Lookup Link",
+                "warranty_lookup_link",
+                "warranty link",
+                "warranty_lookup",
+            ],
+        )
+        issue = _get_first_present_value(
+            row,
+            ["Specific Device Issue", "specific_device_issue", "issue"],
+        )
+        sop_steps = _get_first_present_value(
+            row,
+            [
+                "Advanced Technical Troubleshooting (SOP)",
+                "advanced_technical_troubleshooting_sop",
+                "advanced technical troubleshooting (sop)",
+                "Advanced Technical Troubleshooting SOP",
+                "steps",
+            ],
+        )
+
         normalized.append({
-            "device": (row.get("device") or "").strip(),
-            "issue": (row.get("issue") or "").strip(),
-            "steps": _parse_troubleshooting_steps(row.get("steps")),
+            "brand": str(brand or "").strip(),
+            "warranty_link": str(warranty_link or "").strip(),
+            "specific_issue": str(issue or "").strip(),
+            "advanced_sop_steps": _parse_troubleshooting_steps(sop_steps),
         })
     return normalized
+
+
+def _normalize_free_text(text: str):
+    return " ".join((text or "").strip().lower().split())
+
+
+def _contains_any(text: str, keywords):
+    lowered = (text or "").lower()
+    return any(word in lowered for word in keywords)
+
+
+def _extract_recent_user_text(conversation_history=None):
+    if not conversation_history:
+        return ""
+
+    user_texts = [
+        m.get("content", "")
+        for m in conversation_history[-8:]
+        if m.get("role") == "user" and m.get("content")
+    ]
+    return "\n".join(user_texts)
+
+
+def _resolve_brand(user_message: str, conversation_history, entries):
+    known_brands = sorted(
+        {
+            item.get("brand", "").strip()
+            for item in entries
+            if item.get("brand", "").strip()
+        },
+        key=lambda x: x.lower(),
+    )
+
+    search_space = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    for brand in known_brands:
+        if brand.lower() in search_space:
+            return brand, known_brands
+
+    return None, known_brands
+
+
+def _resolve_issue(user_message: str, conversation_history, brand_entries):
+    search_space = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    known_issues = sorted(
+        {
+            item.get("specific_issue", "").strip()
+            for item in brand_entries
+            if item.get("specific_issue", "").strip()
+        },
+        key=lambda x: x.lower(),
+    )
+
+    for issue in known_issues:
+        if issue.lower() in search_space:
+            return issue, known_issues
+
+    return None, known_issues
+
+
+def _is_warranty_request(user_message: str, conversation_history=None):
+    text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    return _contains_any(text, ["warranty", "guarantee", "rma", "claim", "coverage"])
+
+
+def _is_support_request(user_message: str, conversation_history=None):
+    text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    return _contains_any(
+        text,
+        [
+            "troubleshoot",
+            "not working",
+            "problem",
+            "issue",
+            "error",
+            "fix",
+            "repair",
+            "warranty",
+            "rma",
+            "support",
+        ],
+    )
 
 
 def get_catalog_diagnostics():
@@ -223,9 +343,10 @@ def get_catalog_diagnostics():
             ],
             "troubleshooting": [
                 {
-                    "device": item.get("device"),
-                    "issue": item.get("issue"),
-                    "steps_count": len(item.get("steps", [])),
+                    "brand": item.get("brand"),
+                    "specific_issue": item.get("specific_issue"),
+                    "warranty_link": item.get("warranty_link"),
+                    "steps_count": len(item.get("advanced_sop_steps", [])),
                 }
                 for item in troubleshooting_rows[:3]
             ],
@@ -234,25 +355,66 @@ def get_catalog_diagnostics():
     }
 
 
-def handle_troubleshooting(user_message):
-    user_message_lower = user_message.lower()
+def handle_troubleshooting(user_message, conversation_history=None):
     troubleshooting_data = fetch_troubleshooting_entries()
+    if not troubleshooting_data:
+        return "LEXA here. I can't access troubleshooting records right now. Please try again shortly."
 
-    for item in troubleshooting_data:
-        issue = (item.get("issue") or "").lower()
-        device = (item.get("device") or "").lower()
-        if issue and issue in user_message_lower:
-            steps_list = item.get("steps", [])
-            steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps_list)])
-            if not steps:
-                return "LEXA here. I found that issue, but no step-by-step fix is saved yet."
+    resolved_brand, known_brands = _resolve_brand(user_message, conversation_history, troubleshooting_data)
+    if not resolved_brand:
+        brand_list = ", ".join(known_brands[:10]) if known_brands else "available brands"
+        return (
+            "LEXA here. I can help, but I need the brand first before troubleshooting. "
+            f"Please tell me the brand (for example: {brand_list})."
+        )
 
-            if device:
-                return f"LEXA here. For your {device}, try these troubleshooting steps:\n{steps}"
+    brand_entries = [
+        item for item in troubleshooting_data
+        if _normalize_free_text(item.get("brand", "")) == _normalize_free_text(resolved_brand)
+    ]
 
-            return f"LEXA here. Try these troubleshooting steps:\n{steps}"
+    if _is_warranty_request(user_message, conversation_history):
+        warranty_link = ""
+        for item in brand_entries:
+            if item.get("warranty_link"):
+                warranty_link = item.get("warranty_link")
+                break
 
-    return "LEXA here. Please describe the issue in more detail so I can guide you better."
+        if warranty_link:
+            return (
+                f"LEXA here. For {resolved_brand}, use this warranty lookup link:\n"
+                f"{warranty_link}"
+            )
+
+        return f"LEXA here. I found {resolved_brand}, but there is no warranty lookup link saved yet."
+
+    resolved_issue, known_issues = _resolve_issue(user_message, conversation_history, brand_entries)
+    if not resolved_issue:
+        issue_hint = ", ".join(known_issues[:8]) if known_issues else "the exact issue"
+        return (
+            f"LEXA here. Thanks, I got the brand: {resolved_brand}. "
+            f"Now tell me the specific device issue so I can provide the SOP (for example: {issue_hint})."
+        )
+
+    matched_entry = None
+    for item in brand_entries:
+        if _normalize_free_text(item.get("specific_issue", "")) == _normalize_free_text(resolved_issue):
+            matched_entry = item
+            break
+
+    steps_list = (matched_entry or {}).get("advanced_sop_steps", [])
+    if not steps_list:
+        return (
+            f"LEXA here. I found the issue '{resolved_issue}' for {resolved_brand}, "
+            "but no Advanced Technical Troubleshooting (SOP) steps are saved yet."
+        )
+
+    steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps_list)])
+    return (
+        f"LEXA here. For {resolved_brand} - {resolved_issue}, "
+        "follow this Advanced Technical Troubleshooting (SOP):\n"
+        f"{steps}"
+    )
 
 def extract_intent(user_message, conversation_history=None):
     context_block = ""
@@ -268,8 +430,11 @@ def extract_intent(user_message, conversation_history=None):
     "{user_message}"
 
     Extract:
-    - intent (recommendation, troubleshooting, aftersales, product_detail, or general)
+    - intent (recommendation, troubleshooting, aftersales, product_detail, warranty, or general)
     - product_type (laptop, printer, or the specific product name/type being referred to based on the conversation; use "unknown" only if truly unclear)
+    - support_type (technical, warranty, or unknown)
+    - brand (brand referenced by the user, if any; otherwise null)
+    - issue (specific device issue if provided; otherwise null)
     - features (list)
     - context_product (if this is a follow-up about a previously discussed product, name it here; otherwise null)
 
@@ -435,8 +600,9 @@ def get_bot_response(user_message, session_id=None):
 
     intent_data = extract_intent(user_message, conversation_history=recent_messages)
 
-    if intent_data and intent_data.get("intent") == "troubleshooting":
-        bot_reply = handle_troubleshooting(user_message)
+    intent_name = (intent_data or {}).get("intent", "")
+    if intent_name in {"troubleshooting", "aftersales", "warranty"} or _is_support_request(user_message, recent_messages):
+        bot_reply = handle_troubleshooting(user_message, conversation_history=recent_messages)
     else:
         catalog = fetch_product_catalog()
         products_context = format_product_catalog(catalog)
@@ -462,6 +628,7 @@ def get_bot_response(user_message, session_id=None):
         - Respond as LEXA (Laptop EXpert Assistant) with a modern, confident, tech-savvy tone.
         - Keep recommendations focused on laptops and practical buying guidance whenever relevant.
         - If this is a follow-up question referring to a previously recommended product (e.g. "give me the price", "what are the specs", "show me the warranty"), identify that product from the conversation context and answer specifically about it.
+        - For support questions, collect brand first, then identify the specific issue before giving technical guidance.
         - Do not ask for clarification if the referenced product is clear from the conversation history.
         - Provide a structured, clear response.
         """

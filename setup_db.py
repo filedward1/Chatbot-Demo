@@ -43,9 +43,10 @@ create table if not exists printer (
 
 -- Troubleshooting knowledge base
 create table if not exists troubleshooting (
-    device text not null,
-    issue text not null,
-    steps text not null
+    "Brand" text not null,
+    "Warranty Lookup Link" text,
+    "Specific Device Issue" text not null,
+    "Advanced Technical Troubleshooting (SOP)" text not null
 );
 """
 
