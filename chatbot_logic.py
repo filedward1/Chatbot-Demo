@@ -188,23 +188,10 @@ def _get_first_present_value(row: dict, candidate_keys):
 
 def fetch_troubleshooting_entries():
     """Fetch troubleshooting rows from Supabase troubleshooting table."""
-    # Use * because the new schema includes spaced/parenthesized column names.
+    # Use * because the schema includes spaced/parenthesized column names.
     rows = _fetch_rows("troubleshooting", "*")
     normalized = []
     for row in rows:
-        brand = _get_first_present_value(
-            row,
-            ["Brand", "brand"],
-        )
-        warranty_link = _get_first_present_value(
-            row,
-            [
-                "Warranty Lookup Link",
-                "warranty_lookup_link",
-                "warranty link",
-                "warranty_lookup",
-            ],
-        )
         issue = _get_first_present_value(
             row,
             ["Specific Device Issue", "specific_device_issue", "issue"],
@@ -221,10 +208,34 @@ def fetch_troubleshooting_entries():
         )
 
         normalized.append({
-            "brand": str(brand or "").strip(),
-            "warranty_link": str(warranty_link or "").strip(),
             "specific_issue": str(issue or "").strip(),
             "advanced_sop_steps": _parse_troubleshooting_steps(sop_steps),
+        })
+    return normalized
+
+
+def fetch_warranty_entries():
+    """Fetch warranty rows from Supabase warranty table."""
+    rows = _fetch_rows("warranty", "*")
+    normalized = []
+    for row in rows:
+        brand = _get_first_present_value(
+            row,
+            ["Brand", "brand"],
+        )
+        warranty_link = _get_first_present_value(
+            row,
+            [
+                "Warranty Lookup Link",
+                "warranty_lookup_link",
+                "warranty link",
+                "warranty_lookup",
+            ],
+        )
+
+        normalized.append({
+            "brand": str(brand or "").strip(),
+            "warranty_link": str(warranty_link or "").strip(),
         })
     return normalized
 
@@ -313,6 +324,7 @@ def _is_support_request(user_message: str, conversation_history=None):
 def get_catalog_diagnostics():
     """Return a quick health snapshot for Supabase-backed catalog tables."""
     catalog = fetch_product_catalog()
+    warranty_rows = fetch_warranty_entries()
     troubleshooting_rows = fetch_troubleshooting_entries()
 
     laptop_rows = catalog.get("laptop", [])
@@ -322,6 +334,7 @@ def get_catalog_diagnostics():
         "catalog_counts": {
             "laptop": len(laptop_rows),
             "printer": len(printer_rows),
+            "warranty": len(warranty_rows),
             "troubleshooting": len(troubleshooting_rows),
         },
         "sample_rows": {
@@ -341,11 +354,16 @@ def get_catalog_diagnostics():
                 }
                 for item in printer_rows[:3]
             ],
-            "troubleshooting": [
+            "warranty": [
                 {
                     "brand": item.get("brand"),
-                    "specific_issue": item.get("specific_issue"),
                     "warranty_link": item.get("warranty_link"),
+                }
+                for item in warranty_rows[:3]
+            ],
+            "troubleshooting": [
+                {
+                    "specific_issue": item.get("specific_issue"),
                     "steps_count": len(item.get("advanced_sop_steps", [])),
                 }
                 for item in troubleshooting_rows[:3]
@@ -356,27 +374,26 @@ def get_catalog_diagnostics():
 
 
 def handle_troubleshooting(user_message, conversation_history=None):
+    warranty_data = fetch_warranty_entries()
     troubleshooting_data = fetch_troubleshooting_entries()
-    if not troubleshooting_data:
+    if not warranty_data and not troubleshooting_data:
         return "LEXA here. I can't access troubleshooting records right now. Please try again shortly."
 
-    resolved_brand, known_brands = _resolve_brand(user_message, conversation_history, troubleshooting_data)
-    if not resolved_brand:
-        brand_list = ", ".join(known_brands[:10]) if known_brands else "available brands"
-        return (
-            "LEXA here. I can help, but I need the brand first before troubleshooting. "
-            f"Please tell me the brand (for example: {brand_list})."
-        )
-
-    brand_entries = [
-        item for item in troubleshooting_data
-        if _normalize_free_text(item.get("brand", "")) == _normalize_free_text(resolved_brand)
-    ]
-
     if _is_warranty_request(user_message, conversation_history):
+        if not warranty_data:
+            return "LEXA here. I can't access warranty records right now. Please try again shortly."
+
+        resolved_brand, known_brands = _resolve_brand(user_message, conversation_history, warranty_data)
+        if not resolved_brand:
+            brand_list = ", ".join(known_brands[:10]) if known_brands else "available brands"
+            return (
+                "LEXA here. I can help with warranty lookup, but I need the brand first. "
+                f"Please tell me the brand (for example: {brand_list})."
+            )
+
         warranty_link = ""
-        for item in brand_entries:
-            if item.get("warranty_link"):
+        for item in warranty_data:
+            if _normalize_free_text(item.get("brand", "")) == _normalize_free_text(resolved_brand) and item.get("warranty_link"):
                 warranty_link = item.get("warranty_link")
                 break
 
@@ -388,16 +405,19 @@ def handle_troubleshooting(user_message, conversation_history=None):
 
         return f"LEXA here. I found {resolved_brand}, but there is no warranty lookup link saved yet."
 
-    resolved_issue, known_issues = _resolve_issue(user_message, conversation_history, brand_entries)
+    if not troubleshooting_data:
+        return "LEXA here. I can't access troubleshooting records right now. Please try again shortly."
+
+    resolved_issue, known_issues = _resolve_issue(user_message, conversation_history, troubleshooting_data)
     if not resolved_issue:
         issue_hint = ", ".join(known_issues[:8]) if known_issues else "the exact issue"
         return (
-            f"LEXA here. Thanks, I got the brand: {resolved_brand}. "
-            f"Now tell me the specific device issue so I can provide the SOP (for example: {issue_hint})."
+            "LEXA here. Tell me the specific device issue so I can provide the SOP "
+            f"(for example: {issue_hint})."
         )
 
     matched_entry = None
-    for item in brand_entries:
+    for item in troubleshooting_data:
         if _normalize_free_text(item.get("specific_issue", "")) == _normalize_free_text(resolved_issue):
             matched_entry = item
             break
@@ -411,7 +431,7 @@ def handle_troubleshooting(user_message, conversation_history=None):
 
     steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps_list)])
     return (
-        f"LEXA here. For {resolved_brand} - {resolved_issue}, "
+        f"LEXA here. For issue '{resolved_issue}', "
         "follow this Advanced Technical Troubleshooting (SOP):\n"
         f"{steps}"
     )

@@ -41,10 +41,14 @@ create table if not exists printer (
     tags text
 );
 
+-- Warranty knowledge base
+create table if not exists warranty (
+    "Brand" text not null,
+    "Warranty Lookup Link" text
+);
+
 -- Troubleshooting knowledge base
 create table if not exists troubleshooting (
-    "Brand" text not null,
-    "Warranty Lookup Link" text,
     "Specific Device Issue" text not null,
     "Advanced Technical Troubleshooting (SOP)" text not null
 );

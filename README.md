@@ -45,7 +45,8 @@ pip install -r requirements.txt
    - Create `messages` table (id UUID, conversation_id UUID, role TEXT, content TEXT, created_at TIMESTAMP)
    - Create `laptop` table (id PK, name TEXT, price INT, tags TEXT)
    - Create `printer` table (id PK, name TEXT, price INT, tags TEXT)
-   - Create `troubleshooting` table (device TEXT, issue TEXT, steps TEXT)
+   - Create `warranty` table (Brand TEXT, Warranty Lookup Link TEXT)
+   - Create `troubleshooting` table (Specific Device Issue TEXT, Advanced Technical Troubleshooting (SOP) TEXT)
 
 ### Database Schema
 
@@ -73,10 +74,13 @@ pip install -r requirements.txt
 - `price` (INT)
 - `tags` (TEXT)
 
+**warranty table:**
+- `Brand` (TEXT)
+- `Warranty Lookup Link` (TEXT)
+
 **troubleshooting table:**
-- `device` (TEXT)
-- `issue` (TEXT)
-- `steps` (TEXT)
+- `Specific Device Issue` (TEXT)
+- `Advanced Technical Troubleshooting (SOP)` (TEXT)
 
 ### 4. Run the Application
 ```bash
