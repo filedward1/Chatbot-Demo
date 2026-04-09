@@ -41,9 +41,10 @@ ENABLE_PROVIDER_FALLBACK = _to_bool(os.getenv("ENABLE_PROVIDER_FALLBACK", "true"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 OLLAMA_MODEL_FAST = os.getenv("OLLAMA_MODEL_FAST", "qwen3.5:4b")
 OLLAMA_MODEL_QUALITY = os.getenv("OLLAMA_MODEL_QUALITY", "qwen2.5:7b")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_NUM_CTX = _to_int(os.getenv("OLLAMA_NUM_CTX", "8192"), default=8192)
 OLLAMA_TIMEOUT_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"), default=90)
+OLLAMA_TIMEOUT_RETRY_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_RETRY_SECONDS", "180"), default=180)
 
 # Initialize Supabase client
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
@@ -148,14 +149,42 @@ def _generate_with_ollama(prompt: str, use_quality_model: bool = False, temperat
             "temperature": temperature,
         },
     }
-    response = requests.post(
-        f"{OLLAMA_URL}/api/generate",
-        json=payload,
-        timeout=OLLAMA_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    body = response.json()
-    return (body.get("response") or "").strip()
+
+    url_candidates = [OLLAMA_URL]
+    if "localhost" in OLLAMA_URL:
+        url_candidates.append(OLLAMA_URL.replace("localhost", "127.0.0.1"))
+
+    timeout_candidates = [OLLAMA_TIMEOUT_SECONDS, OLLAMA_TIMEOUT_RETRY_SECONDS]
+    seen = set()
+    last_error = None
+
+    for base_url in url_candidates:
+        for timeout_value in timeout_candidates:
+            key = (base_url, timeout_value)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                response = requests.post(
+                    f"{base_url}/api/generate",
+                    json=payload,
+                    timeout=timeout_value,
+                )
+                response.raise_for_status()
+                body = response.json()
+                return (body.get("response") or "").strip()
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                logger.warning(
+                    "Ollama request failed (url=%s, timeout=%ss, model=%s): %s",
+                    base_url,
+                    timeout_value,
+                    model_name,
+                    e,
+                )
+                continue
+
+    raise RuntimeError(last_error or "Ollama request failed")
 
 
 def _is_gemini_capacity_error(error: Exception):
@@ -186,8 +215,15 @@ def _is_ollama_connection_error(error: Exception):
         or "connection refused" in text
         or "winerror 10061" in text
         or "max retries exceeded" in text
-        or "/api/generate" in text and "localhost" in text
+        or "connectionpool(host='localhost'" in text
+        or "connectionpool(host='127.0.0.1'" in text
+        or "/api/generate" in text and ("localhost" in text or "127.0.0.1" in text)
     )
+
+
+def _is_ollama_timeout_error(error: Exception):
+    text = str(error or "").lower()
+    return "read timed out" in text or "timeout" in text
 
 
 def _generate_text(
@@ -253,6 +289,11 @@ def _generate_text(
             raise RuntimeError(
                 "All LLM providers failed: Ollama is unreachable at "
                 f"{OLLAMA_URL}. Start Ollama with 'ollama serve' or configure GEMINI_API_KEY for API fallback."
+            )
+        if _is_ollama_timeout_error(last_error):
+            raise RuntimeError(
+                "All LLM providers failed: Ollama timed out while generating a response. "
+                "Try again or increase OLLAMA_TIMEOUT_SECONDS / reduce OLLAMA_NUM_CTX."
             )
         raise RuntimeError(f"All LLM providers failed: {last_error}")
     raise RuntimeError("No LLM provider available.")
@@ -1022,7 +1063,11 @@ def get_bot_response(user_message, session_id=None):
     conv = get_conversation_messages(current_session_id)
     recent_messages = conv.get("messages", [])[-6:]
 
-    intent_data = extract_intent(user_message, conversation_history=recent_messages)
+    try:
+        intent_data = extract_intent(user_message, conversation_history=recent_messages)
+    except Exception:
+        logger.exception("Intent extraction failed; continuing with heuristic routing")
+        intent_data = None
     preferred_provider = _preferred_provider_for_query(
         user_message,
         intent_data=intent_data,
@@ -1061,11 +1106,18 @@ def get_bot_response(user_message, session_id=None):
         - Do not ask for clarification if the referenced product is clear from the conversation history.
         - Provide a structured, clear response.
         """
-        bot_reply = _generate_text(
-            prompt,
-            use_quality_model=True,
-            preferred_provider=preferred_provider,
-        )
+        try:
+            bot_reply = _generate_text(
+                prompt,
+                use_quality_model=True,
+                preferred_provider=preferred_provider,
+            )
+        except Exception:
+            logger.exception("Primary response generation failed")
+            bot_reply = (
+                "LEXA here. My local model is temporarily busy or unavailable. "
+                "Please retry in a few seconds."
+            )
 
     # Save messages to Supabase
     save_message_to_db("user", user_message)
