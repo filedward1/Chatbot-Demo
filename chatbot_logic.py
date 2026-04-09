@@ -1062,16 +1062,16 @@ def extract_intent(user_message, conversation_history=None):
     )
 
 def create_conversation_in_db():
-    # """Create a new conversation record in the database"""
+    # """Create a new conversation record in the database (or use existing if it already exists)"""
     try:
-        response = supabase.table("conversation").insert({
+        response = supabase.table("conversation").upsert({
             "id": current_session_id,
             "created_at": datetime.now().isoformat()
         }).execute()
         return response.data
     except Exception as e:
         logger.exception("Failed to create conversation record")
-        # It may already exist (e.g. restoring an existing session)
+        # Even if upsert fails, the record may still exist
         return None
 
 
@@ -1169,13 +1169,13 @@ def set_current_session(session_id: str):
     current_session_id = session_id
 
     try:
-        supabase.table("conversation").insert({
+        supabase.table("conversation").upsert({
             "id": current_session_id,
             "created_at": datetime.now().isoformat()
         }).execute()
     except Exception:
-        # Ignore if the conversation already exists.
-        pass
+        logger.warning(f"Could not upsert conversation record for session {session_id}")
+        # Continue anyway; the session can still work even if the record wasn't created
 
 def save_message_to_db(role, content):
     # """Save a message to the database"""
