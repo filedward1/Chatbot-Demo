@@ -4,7 +4,6 @@ from google.genai import types
 import os
 import json
 import re
-import requests
 import logging
 import time
 
@@ -19,7 +18,6 @@ logger = logging.getLogger("lexa.chatbot")
 current_session_id = str(uuid.uuid4())
 last_fetch_status = {}
 
-last_ollama_timeout_at = None
 last_llm_error = None
 last_llm_error_at = None
 last_llm_success = None
@@ -40,23 +38,12 @@ def _to_int(value, default=0):
         return default
 
 
-LLM_MODE = os.getenv("LLM_MODE", "hybrid").strip().lower()  # gemini | ollama | hybrid
-HYBRID_PRIMARY_PROVIDER = os.getenv("HYBRID_PRIMARY_PROVIDER", "ollama").strip().lower()
-ENABLE_PROVIDER_FALLBACK = _to_bool(os.getenv("ENABLE_PROVIDER_FALLBACK", "true"), default=True)
+LLM_MODE = "gemini"
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
-OLLAMA_MODEL_FAST = os.getenv("OLLAMA_MODEL_FAST", "qwen3.5:4b")
-OLLAMA_MODEL_QUALITY = os.getenv("OLLAMA_MODEL_QUALITY", "qwen2.5:7b")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_NUM_CTX = _to_int(os.getenv("OLLAMA_NUM_CTX", "4096"), default=4096)
-OLLAMA_FAST_NUM_CTX = _to_int(os.getenv("OLLAMA_FAST_NUM_CTX", "2048"), default=2048)
-OLLAMA_TIMEOUT_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"), default=90)
-OLLAMA_TIMEOUT_RETRY_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_RETRY_SECONDS", "180"), default=180)
-OLLAMA_QUALITY_COOLDOWN_SECONDS = _to_int(os.getenv("OLLAMA_QUALITY_COOLDOWN_SECONDS", "120"), default=120)
 CHAT_FAST_FAIL_SECONDS = _to_int(os.getenv("CHAT_FAST_FAIL_SECONDS", "35"), default=35)
 INTENT_FAST_FAIL_SECONDS = _to_int(os.getenv("INTENT_FAST_FAIL_SECONDS", "20"), default=20)
 TITLE_FAST_FAIL_SECONDS = _to_int(os.getenv("TITLE_FAST_FAIL_SECONDS", "12"), default=12)
-SHORT_QUERY_MAX_CHARS = _to_int(os.getenv("SHORT_QUERY_MAX_CHARS", "90"), default=90)
 
 # Initialize Supabase client
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
@@ -107,33 +94,6 @@ Instructions:
 """
 
 
-def _get_provider_order():
-    if LLM_MODE == "gemini":
-        base = ["gemini"]
-    elif LLM_MODE == "ollama":
-        base = ["ollama"]
-    else:
-        if HYBRID_PRIMARY_PROVIDER == "gemini":
-            base = ["gemini", "ollama"]
-        else:
-            base = ["ollama", "gemini"]
-
-    if ENABLE_PROVIDER_FALLBACK:
-        if "gemini" not in base:
-            base.append("gemini")
-        if "ollama" not in base:
-            base.append("ollama")
-
-    return base
-
-
-def _get_provider_order_with_preference(preferred_provider: str | None = None):
-    order = _get_provider_order()
-    if preferred_provider in {"gemini", "ollama"} and preferred_provider in order:
-        return [preferred_provider] + [item for item in order if item != preferred_provider]
-    return order
-
-
 def _generate_with_gemini(prompt: str, temperature: float = 0.2):
     if client is None:
         raise RuntimeError("Gemini is not configured (missing GEMINI_API_KEY).")
@@ -147,117 +107,6 @@ def _generate_with_gemini(prompt: str, temperature: float = 0.2):
         ),
     )
     return (response.text or "").strip()
-
-
-def _generate_with_ollama(
-    prompt: str,
-    use_quality_model: bool = False,
-    temperature: float = 0.2,
-    timeout_override: int | None = None,
-    use_fast_ctx: bool = False,
-):
-    model_name = OLLAMA_MODEL_QUALITY if use_quality_model else OLLAMA_MODEL_FAST
-    ctx_value = OLLAMA_FAST_NUM_CTX if use_fast_ctx else OLLAMA_NUM_CTX
-    payload = {
-        "model": model_name,
-        "prompt": prompt,
-        "system": system_prompt,
-        "stream": False,
-        "options": {
-            "num_ctx": ctx_value,
-            "temperature": temperature,
-        },
-    }
-
-    url_candidates = [OLLAMA_URL]
-    if "localhost" in OLLAMA_URL:
-        url_candidates.append(OLLAMA_URL.replace("localhost", "127.0.0.1"))
-
-    if timeout_override and timeout_override > 0:
-        timeout_candidates = [timeout_override]
-    else:
-        timeout_candidates = [OLLAMA_TIMEOUT_SECONDS, OLLAMA_TIMEOUT_RETRY_SECONDS]
-    seen = set()
-    last_error = None
-
-    for base_url in url_candidates:
-        for timeout_value in timeout_candidates:
-            key = (base_url, timeout_value)
-            if key in seen:
-                continue
-            seen.add(key)
-            try:
-                response = requests.post(
-                    f"{base_url}/api/generate",
-                    json=payload,
-                    timeout=timeout_value,
-                )
-                response.raise_for_status()
-                body = response.json()
-                return (body.get("response") or "").strip()
-            except requests.exceptions.RequestException as e:
-                last_error = e
-                logger.warning(
-                    "Ollama request failed (url=%s, timeout=%ss, model=%s): %s",
-                    base_url,
-                    timeout_value,
-                    model_name,
-                    e,
-                )
-                continue
-
-    raise RuntimeError(last_error or "Ollama request failed")
-
-
-def _is_gemini_capacity_error(error: Exception):
-    text = str(error or "").lower()
-    return (
-        "503" in text
-        or "unavailable" in text
-        or "high demand" in text
-        or "try again later" in text
-    )
-
-
-def _is_gemini_quota_error(error: Exception):
-    text = str(error or "").lower()
-    return (
-        "429" in text
-        or "resource_exhausted" in text
-        or "quota exceeded" in text
-        or "rate limit" in text
-        or "exceeded your current quota" in text
-    )
-
-
-def _is_ollama_connection_error(error: Exception):
-    text = str(error or "").lower()
-    return (
-        "failed to establish a new connection" in text
-        or "connection refused" in text
-        or "winerror 10061" in text
-        or "max retries exceeded" in text
-        or "connectionpool(host='localhost'" in text
-        or "connectionpool(host='127.0.0.1'" in text
-        or "/api/generate" in text and ("localhost" in text or "127.0.0.1" in text)
-    )
-
-
-def _is_ollama_timeout_error(error: Exception):
-    text = str(error or "").lower()
-    return "read timed out" in text or "timeout" in text
-
-
-def _is_quality_cooldown_active():
-    if not last_ollama_timeout_at:
-        return False
-    elapsed = time.time() - last_ollama_timeout_at
-    return elapsed < OLLAMA_QUALITY_COOLDOWN_SECONDS
-
-
-def _mark_ollama_timeout():
-    global last_ollama_timeout_at
-    last_ollama_timeout_at = time.time()
 
 
 def _mark_llm_error(error_text: str):
@@ -279,28 +128,12 @@ def _mark_llm_success(provider: str, model: str, elapsed_ms: int):
 
 
 def get_llm_diagnostics():
-    cooldown_remaining = 0
-    if last_ollama_timeout_at:
-        elapsed = int(time.time() - last_ollama_timeout_at)
-        cooldown_remaining = max(0, OLLAMA_QUALITY_COOLDOWN_SECONDS - elapsed)
-
     return {
         "config": {
             "llm_mode": LLM_MODE,
-            "hybrid_primary_provider": HYBRID_PRIMARY_PROVIDER,
-            "provider_fallback_enabled": ENABLE_PROVIDER_FALLBACK,
             "gemini_model": GEMINI_MODEL,
-            "ollama_model_fast": OLLAMA_MODEL_FAST,
-            "ollama_model_quality": OLLAMA_MODEL_QUALITY,
-            "ollama_url": OLLAMA_URL,
-            "ollama_num_ctx": OLLAMA_NUM_CTX,
-            "ollama_fast_num_ctx": OLLAMA_FAST_NUM_CTX,
-            "quality_cooldown_seconds": OLLAMA_QUALITY_COOLDOWN_SECONDS,
         },
         "runtime": {
-            "quality_cooldown_active": _is_quality_cooldown_active(),
-            "quality_cooldown_remaining_seconds": cooldown_remaining,
-            "last_ollama_timeout_at": datetime.fromtimestamp(last_ollama_timeout_at).isoformat() if last_ollama_timeout_at else None,
             "last_llm_error": last_llm_error,
             "last_llm_error_at": last_llm_error_at,
             "last_llm_success": last_llm_success,
@@ -316,111 +149,16 @@ def _generate_text(
     fast_fail_seconds: int | None = None,
     use_fast_ctx: bool = False,
 ):
-    last_error = None
-    effective_quality_mode = use_quality_model and not _is_quality_cooldown_active()
-    if use_quality_model and not effective_quality_mode:
-        logger.info("Quality model temporarily disabled due to recent Ollama timeout cooldown.")
-
-    for provider in _get_provider_order_with_preference(preferred_provider):
-        provider_start = time.time()
-        try:
-            if provider == "gemini":
-                result = _generate_with_gemini(prompt, temperature=temperature)
-                elapsed_ms = int((time.time() - provider_start) * 1000)
-                _mark_llm_success("gemini", GEMINI_MODEL, elapsed_ms)
-                return result
-            if provider == "ollama":
-                result = _generate_with_ollama(
-                    prompt,
-                    use_quality_model=effective_quality_mode,
-                    temperature=temperature,
-                    timeout_override=fast_fail_seconds,
-                    use_fast_ctx=use_fast_ctx,
-                )
-                elapsed_ms = int((time.time() - provider_start) * 1000)
-                used_model = OLLAMA_MODEL_QUALITY if effective_quality_mode else OLLAMA_MODEL_FAST
-                _mark_llm_success("ollama", used_model, elapsed_ms)
-                return result
-        except Exception as e:
-            logger.exception("LLM provider failed: %s", provider)
-            _mark_llm_error(str(e))
-            if provider == "ollama" and _is_ollama_timeout_error(e):
-                _mark_ollama_timeout()
-
-            if provider == "gemini" and (_is_gemini_capacity_error(e) or _is_gemini_quota_error(e)):
-                logger.warning("Gemini capacity/quota error detected; switching to local Ollama fast model.")
-                try:
-                    fallback_start = time.time()
-                    result = _generate_with_ollama(
-                        prompt,
-                        use_quality_model=False,
-                        temperature=temperature,
-                        timeout_override=fast_fail_seconds,
-                        use_fast_ctx=True,
-                    )
-                    elapsed_ms = int((time.time() - fallback_start) * 1000)
-                    _mark_llm_success("ollama", OLLAMA_MODEL_FAST, elapsed_ms)
-                    return result
-                except Exception as local_error:
-                    logger.exception("Local Ollama fast fallback after Gemini capacity/quota error failed")
-                    _mark_llm_error(str(local_error))
-                    if _is_ollama_timeout_error(local_error):
-                        _mark_ollama_timeout()
-                    last_error = local_error
-                    continue
-
-            if provider == "ollama" and _is_ollama_connection_error(e):
-                logger.warning("Ollama connection error detected; switching to Gemini API.")
-                try:
-                    fallback_start = time.time()
-                    result = _generate_with_gemini(prompt, temperature=temperature)
-                    elapsed_ms = int((time.time() - fallback_start) * 1000)
-                    _mark_llm_success("gemini", GEMINI_MODEL, elapsed_ms)
-                    return result
-                except Exception as gemini_error:
-                    logger.exception("Gemini fallback after Ollama connection error failed")
-                    _mark_llm_error(str(gemini_error))
-                    last_error = gemini_error
-                    continue
-
-            if provider == "ollama" and effective_quality_mode:
-                logger.warning("Ollama quality model failed; retrying with fast model.")
-                try:
-                    fallback_start = time.time()
-                    result = _generate_with_ollama(
-                        prompt,
-                        use_quality_model=False,
-                        temperature=temperature,
-                        timeout_override=fast_fail_seconds,
-                        use_fast_ctx=True,
-                    )
-                    elapsed_ms = int((time.time() - fallback_start) * 1000)
-                    _mark_llm_success("ollama", OLLAMA_MODEL_FAST, elapsed_ms)
-                    return result
-                except Exception as fast_error:
-                    logger.exception("Ollama fast fallback failed")
-                    _mark_llm_error(str(fast_error))
-                    if _is_ollama_timeout_error(fast_error):
-                        _mark_ollama_timeout()
-                    last_error = fast_error
-                    continue
-
-            last_error = e
-            continue
-
-    if last_error:
-        if _is_ollama_connection_error(last_error):
-            raise RuntimeError(
-                "All LLM providers failed: Ollama is unreachable at "
-                f"{OLLAMA_URL}. Start Ollama with 'ollama serve' or configure GEMINI_API_KEY for API fallback."
-            )
-        if _is_ollama_timeout_error(last_error):
-            raise RuntimeError(
-                "All LLM providers failed: Ollama timed out while generating a response. "
-                "Try again or increase OLLAMA_TIMEOUT_SECONDS / reduce OLLAMA_NUM_CTX."
-            )
-        raise RuntimeError(f"All LLM providers failed: {last_error}")
-    raise RuntimeError("No LLM provider available.")
+    provider_start = time.time()
+    try:
+        result = _generate_with_gemini(prompt, temperature=temperature)
+        elapsed_ms = int((time.time() - provider_start) * 1000)
+        _mark_llm_success("gemini", GEMINI_MODEL, elapsed_ms)
+        return result
+    except Exception as e:
+        logger.exception("Gemini generation failed")
+        _mark_llm_error(str(e))
+        raise RuntimeError(f"Gemini API request failed: {e}")
 
 
 def _extract_json_object(text: str):
@@ -455,70 +193,8 @@ def _generate_json(prompt: str, use_quality_model: bool = True, fast_fail_second
     return _extract_json_object(raw)
 
 
-def _is_heavy_query(user_message: str, intent_data=None, conversation_history=None):
-    message = (user_message or "").strip().lower()
-    intent_name = ((intent_data or {}).get("intent") or "").strip().lower()
-
-    heavy_keywords = [
-        "compare",
-        "comparison",
-        "versus",
-        "vs",
-        "best",
-        "recommend",
-        "which should i buy",
-        "long term",
-        "workflow",
-        "budget",
-        "gaming",
-        "editing",
-        "machine learning",
-        "data science",
-        "benchmark",
-        "troubleshoot",
-        "issue",
-        "error",
-        "step by step",
-        "diagnose",
-    ]
-
-    if any(token in message for token in heavy_keywords):
-        return True
-
-    if intent_name in {"troubleshooting", "aftersales", "recommendation", "product_detail"}:
-        return True
-
-    history_size = len(conversation_history or [])
-    if history_size >= 5:
-        return True
-
-    if len(user_message or "") >= 180:
-        return True
-
-    return False
-
-
-def _preferred_provider_for_query(user_message: str, intent_data=None, conversation_history=None):
-    if LLM_MODE != "hybrid":
-        return None
-
-    if _is_heavy_query(user_message, intent_data=intent_data, conversation_history=conversation_history):
-        return "gemini"
-
-    return "ollama"
-
-
-def _should_use_fast_local_path(user_message: str, intent_data=None, conversation_history=None):
-    if _is_heavy_query(user_message, intent_data=intent_data, conversation_history=conversation_history):
-        return False
-    if len((user_message or "").strip()) > SHORT_QUERY_MAX_CHARS:
-        return False
-    if len(conversation_history or []) >= 4:
-        return False
-    return True
-
 print("Chatbot is running. Type 'exit' to quit.\n")
-print(f"LLM mode: {LLM_MODE} | primary: {HYBRID_PRIMARY_PROVIDER}")
+print(f"LLM mode: {LLM_MODE}")
 
 
 def _fetch_rows(table_name: str, columns: str = "*"):
@@ -802,7 +478,6 @@ def _expound_troubleshooting_idea(issue: str, main_idea: str):
         return _generate_text(
             prompt,
             use_quality_model=True,
-            preferred_provider=("gemini" if LLM_MODE == "hybrid" else None),
             fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
         )
     except Exception:
@@ -1237,11 +912,6 @@ def get_bot_response(user_message, session_id=None):
     except Exception:
         logger.exception("Intent extraction failed; continuing with heuristic routing")
         intent_data = None
-    preferred_provider = _preferred_provider_for_query(
-        user_message,
-        intent_data=intent_data,
-        conversation_history=recent_messages,
-    )
 
     intent_name = (intent_data or {}).get("intent", "")
     if intent_name in {"troubleshooting", "aftersales", "warranty"} or _is_support_request(user_message, recent_messages):
@@ -1275,23 +945,16 @@ def get_bot_response(user_message, session_id=None):
         - Do not ask for clarification if the referenced product is clear from the conversation history.
         - Provide a structured, clear response.
         """
-        use_fast_local = _should_use_fast_local_path(
-            user_message,
-            intent_data=intent_data,
-            conversation_history=recent_messages,
-        )
         try:
             bot_reply = _generate_text(
                 prompt,
-                use_quality_model=not use_fast_local,
-                preferred_provider=preferred_provider,
+                use_quality_model=True,
                 fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
-                use_fast_ctx=use_fast_local,
             )
         except Exception:
             logger.exception("Primary response generation failed")
             bot_reply = (
-                "LEXA here. My local model is temporarily busy or unavailable. "
+                "LEXA here. I can't reach the Gemini API right now. "
                 "Please retry in a few seconds."
             )
 

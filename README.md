@@ -6,7 +6,7 @@ The name emphasizes expertise specifically in laptops - "LEX" directly highlight
 LEXA is designed to be modern, confident, and tech-savvy, combining deep product knowledge with personalized guidance to make laptop shopping effortless.
 
 ## Features
-- Hybrid LLM support (Google Gemini API, Ollama local, or both)
+- Gemini API powered responses
 - LEXA identity with laptop-expert guidance style
 - Laptop-first product recommendations
 - Troubleshooting assistance
@@ -22,39 +22,10 @@ Create a `.env` file in the project root with the following variables:
 SUPABASE_URL=your_supabase_url_here
 SUPABASE_KEY=your_supabase_anon_key_here
 
-# Optional Gemini settings (required only if using Gemini or hybrid fallback)
+# Gemini settings
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3-flash-preview
-
-# Local Ollama settings
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL_FAST=qwen3.5:4b
-OLLAMA_MODEL_QUALITY=qwen2.5:7b
-OLLAMA_NUM_CTX=8192
-OLLAMA_TIMEOUT_SECONDS=90
-
-# LLM routing mode
-# LLM_MODE: gemini | ollama | hybrid
-LLM_MODE=hybrid
-
-# In hybrid mode, choose preferred primary provider: gemini | ollama
-HYBRID_PRIMARY_PROVIDER=ollama
-
-# If true, automatically try the other provider when the primary fails
-ENABLE_PROVIDER_FALLBACK=true
 ```
-
-### Recommended Ollama Model Pulls
-```bash
-ollama pull qwen3.5:4b
-ollama pull qwen2.5:7b
-```
-
-### Hybrid Mode Behavior
-- Fast/short requests default to `OLLAMA_MODEL_FAST`.
-- More complex generation tasks use `OLLAMA_MODEL_QUALITY`.
-- If `ENABLE_PROVIDER_FALLBACK=true`, the chatbot automatically tries the other provider if the first one fails.
-- In `LLM_MODE=hybrid`, heavy/complex queries are routed to Gemini first, while fast/simple queries stay on Ollama first.
 
 ### 2. Install Dependencies
 ```bash
