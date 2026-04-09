@@ -249,6 +249,50 @@ def _contains_any(text: str, keywords):
     return any(word in lowered for word in keywords)
 
 
+def _build_main_troubleshooting_idea(steps_list):
+    """Collapse stored SOP content into one concise main idea sentence."""
+    cleaned = [str(step).strip() for step in (steps_list or []) if str(step).strip()]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    return "; ".join(cleaned)
+
+
+def _expound_troubleshooting_idea(issue: str, main_idea: str):
+    """Use Gemini to expand a concise troubleshooting idea into actionable guidance."""
+    if not main_idea:
+        return ""
+
+    prompt = f"""
+    You are LEXA (Laptop EXpert Assistant), helping with technical troubleshooting.
+
+    Issue: {issue}
+    Main troubleshooting idea: {main_idea}
+
+    Expand the main idea into practical guidance for a non-technical user.
+
+    Rules:
+    - Start with: Main idea: <repeat the exact main idea>
+    - Add one line after it: Why this helps: <one simple sentence>
+    - Then provide 3-5 short numbered steps.
+    - Each step should be specific and easy to follow (about 8-14 words).
+    - Keep the full response concise and clear.
+    - Mention one simple caution/safety reminder only if relevant.
+    - Do not invent product-specific details that were not provided.
+    - Do not include markdown headings, bullet symbols, or extra sections.
+    """
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt
+        )
+        return (response.text or "").strip()
+    except Exception:
+        return ""
+
+
 def _extract_recent_user_text(conversation_history=None):
     if not conversation_history:
         return ""
@@ -425,14 +469,21 @@ def handle_troubleshooting(user_message, conversation_history=None):
     steps_list = (matched_entry or {}).get("advanced_sop_steps", [])
     if not steps_list:
         return (
-            f"LEXA here. I found the issue '{resolved_issue}' for {resolved_brand}, "
+            f"LEXA here. I found the issue '{resolved_issue}', "
             "but no Advanced Technical Troubleshooting (SOP) steps are saved yet."
         )
 
+    main_idea = _build_main_troubleshooting_idea(steps_list)
+    expanded_guidance = _expound_troubleshooting_idea(resolved_issue, main_idea)
+    if expanded_guidance:
+        return f"LEXA here. For issue '{resolved_issue}':\n{expanded_guidance}"
+
+    # Fallback if LLM expansion fails.
     steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps_list)])
     return (
         f"LEXA here. For issue '{resolved_issue}', "
         "follow this Advanced Technical Troubleshooting (SOP):\n"
+        f"Main idea: {main_idea}\n"
         f"{steps}"
     )
 
