@@ -4,6 +4,7 @@ from google.genai import types
 import os
 import json
 import re
+import requests
 
 import uuid
 from datetime import datetime
@@ -14,6 +15,31 @@ current_session_id = str(uuid.uuid4())
 last_fetch_status = {}
 
 load_dotenv()
+
+
+def _to_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _to_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+LLM_MODE = os.getenv("LLM_MODE", "hybrid").strip().lower()  # gemini | ollama | hybrid
+HYBRID_PRIMARY_PROVIDER = os.getenv("HYBRID_PRIMARY_PROVIDER", "ollama").strip().lower()
+ENABLE_PROVIDER_FALLBACK = _to_bool(os.getenv("ENABLE_PROVIDER_FALLBACK", "true"), default=True)
+
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+OLLAMA_MODEL_FAST = os.getenv("OLLAMA_MODEL_FAST", "qwen3.5:4b")
+OLLAMA_MODEL_QUALITY = os.getenv("OLLAMA_MODEL_QUALITY", "qwen2.5:7b")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_NUM_CTX = _to_int(os.getenv("OLLAMA_NUM_CTX", "8192"), default=8192)
+OLLAMA_TIMEOUT_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"), default=90)
 
 # Initialize Supabase client
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
@@ -26,23 +52,19 @@ supabase: Client = create_client(
 )
 
 def reset_chat():
-    global chat, current_session_id
-
-    chat = client.chats.create(
-        model="gemini-3-flash-preview",
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-        )
-    )
+    global current_session_id
 
     current_session_id = str(uuid.uuid4())
     return current_session_id
 
-# Create client (automatically uses GEMINI_API_KEY environment variable)
-if not os.getenv("GEMINI_API_KEY"):
-    print("API key not found. Check your .env file.")
-    exit()
-client = genai.Client()
+# Create Gemini client only if key is available.
+client = None
+if os.getenv("GEMINI_API_KEY"):
+    try:
+        client = genai.Client()
+    except Exception as e:
+        print(f"Gemini client initialization failed: {e}")
+        client = None
 
 system_prompt = """
 You are LEXA, which stands for Laptop EXpert Assistant.
@@ -67,15 +89,182 @@ Instructions:
 4. Keep answer clear.
 """
 
-# Create a chat session for multi-turn conversation
-chat = client.chats.create(
-    model='gemini-3-flash-preview',
-    config=types.GenerateContentConfig(
-        system_instruction=system_prompt,
+
+def _get_provider_order():
+    if LLM_MODE == "gemini":
+        base = ["gemini"]
+    elif LLM_MODE == "ollama":
+        base = ["ollama"]
+    else:
+        if HYBRID_PRIMARY_PROVIDER == "gemini":
+            base = ["gemini", "ollama"]
+        else:
+            base = ["ollama", "gemini"]
+
+    if ENABLE_PROVIDER_FALLBACK:
+        if "gemini" not in base:
+            base.append("gemini")
+        if "ollama" not in base:
+            base.append("ollama")
+
+    return base
+
+
+def _get_provider_order_with_preference(preferred_provider: str | None = None):
+    order = _get_provider_order()
+    if preferred_provider in {"gemini", "ollama"} and preferred_provider in order:
+        return [preferred_provider] + [item for item in order if item != preferred_provider]
+    return order
+
+
+def _generate_with_gemini(prompt: str, temperature: float = 0.2):
+    if client is None:
+        raise RuntimeError("Gemini is not configured (missing GEMINI_API_KEY).")
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=temperature,
+        ),
     )
-)
+    return (response.text or "").strip()
+
+
+def _generate_with_ollama(prompt: str, use_quality_model: bool = False, temperature: float = 0.2):
+    model_name = OLLAMA_MODEL_QUALITY if use_quality_model else OLLAMA_MODEL_FAST
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "system": system_prompt,
+        "stream": False,
+        "options": {
+            "num_ctx": OLLAMA_NUM_CTX,
+            "temperature": temperature,
+        },
+    }
+    response = requests.post(
+        f"{OLLAMA_URL}/api/generate",
+        json=payload,
+        timeout=OLLAMA_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    body = response.json()
+    return (body.get("response") or "").strip()
+
+
+def _generate_text(
+    prompt: str,
+    use_quality_model: bool = False,
+    temperature: float = 0.2,
+    preferred_provider: str | None = None,
+):
+    last_error = None
+    for provider in _get_provider_order_with_preference(preferred_provider):
+        try:
+            if provider == "gemini":
+                return _generate_with_gemini(prompt, temperature=temperature)
+            if provider == "ollama":
+                return _generate_with_ollama(
+                    prompt,
+                    use_quality_model=use_quality_model,
+                    temperature=temperature,
+                )
+        except Exception as e:
+            last_error = e
+            continue
+
+    if last_error:
+        raise RuntimeError(f"All LLM providers failed: {last_error}")
+    raise RuntimeError("No LLM provider available.")
+
+
+def _extract_json_object(text: str):
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    match = re.search(r"\{[\s\S]*\}", text or "")
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except Exception:
+            return None
+    return None
+
+
+def _generate_json(prompt: str, use_quality_model: bool = True):
+    strict_prompt = (
+        f"{prompt}\n\n"
+        "Output rules:\n"
+        "- Return valid JSON only.\n"
+        "- Do not include markdown.\n"
+        "- Do not include explanation text."
+    )
+    raw = _generate_text(
+        strict_prompt,
+        use_quality_model=use_quality_model,
+        temperature=0.0,
+    )
+    return _extract_json_object(raw)
+
+
+def _is_heavy_query(user_message: str, intent_data=None, conversation_history=None):
+    message = (user_message or "").strip().lower()
+    intent_name = ((intent_data or {}).get("intent") or "").strip().lower()
+
+    heavy_keywords = [
+        "compare",
+        "comparison",
+        "versus",
+        "vs",
+        "best",
+        "recommend",
+        "which should i buy",
+        "long term",
+        "workflow",
+        "budget",
+        "gaming",
+        "editing",
+        "machine learning",
+        "data science",
+        "benchmark",
+        "troubleshoot",
+        "issue",
+        "error",
+        "step by step",
+        "diagnose",
+    ]
+
+    if any(token in message for token in heavy_keywords):
+        return True
+
+    if intent_name in {"troubleshooting", "aftersales", "recommendation", "product_detail"}:
+        return True
+
+    history_size = len(conversation_history or [])
+    if history_size >= 5:
+        return True
+
+    if len(user_message or "") >= 180:
+        return True
+
+    return False
+
+
+def _preferred_provider_for_query(user_message: str, intent_data=None, conversation_history=None):
+    if LLM_MODE != "hybrid":
+        return None
+
+    if _is_heavy_query(user_message, intent_data=intent_data, conversation_history=conversation_history):
+        return "gemini"
+
+    return "ollama"
 
 print("Chatbot is running. Type 'exit' to quit.\n")
+print(f"LLM mode: {LLM_MODE} | primary: {HYBRID_PRIMARY_PROVIDER}")
 
 
 def _fetch_rows(table_name: str, columns: str = "*"):
@@ -260,7 +449,7 @@ def _build_main_troubleshooting_idea(steps_list):
 
 
 def _expound_troubleshooting_idea(issue: str, main_idea: str):
-    """Use Gemini to expand a concise troubleshooting idea into actionable guidance."""
+    """Use configured LLM provider to expand a concise troubleshooting idea."""
     if not main_idea:
         return ""
 
@@ -286,11 +475,11 @@ def _expound_troubleshooting_idea(issue: str, main_idea: str):
     """
 
     try:
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt
+        return _generate_text(
+            prompt,
+            use_quality_model=True,
+            preferred_provider=("gemini" if LLM_MODE == "hybrid" else None),
         )
-        return (response.text or "").strip()
     except Exception:
         return ""
 
@@ -515,15 +704,7 @@ def extract_intent(user_message, conversation_history=None):
     Return JSON only.
     """
 
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=intent_prompt
-    )
-
-    try:
-        return json.loads(response.text)
-    except:
-        return None
+    return _generate_json(intent_prompt, use_quality_model=True)
 
 def create_conversation_in_db():
     # """Create a new conversation record in the database"""
@@ -603,12 +784,7 @@ def maybe_generate_title_for_session(session_id: str):
     """
 
     try:
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt
-        )
-
-        title = response.text.strip().strip('"').strip("'")
+        title = _generate_text(prompt, use_quality_model=False).strip().strip('"').strip("'")
         if not title:
             title = fallback_title
 
@@ -672,6 +848,11 @@ def get_bot_response(user_message, session_id=None):
     recent_messages = conv.get("messages", [])[-6:]
 
     intent_data = extract_intent(user_message, conversation_history=recent_messages)
+    preferred_provider = _preferred_provider_for_query(
+        user_message,
+        intent_data=intent_data,
+        conversation_history=recent_messages,
+    )
 
     intent_name = (intent_data or {}).get("intent", "")
     if intent_name in {"troubleshooting", "aftersales", "warranty"} or _is_support_request(user_message, recent_messages):
@@ -705,8 +886,11 @@ def get_bot_response(user_message, session_id=None):
         - Do not ask for clarification if the referenced product is clear from the conversation history.
         - Provide a structured, clear response.
         """
-        response = chat.send_message(prompt)
-        bot_reply = response.text
+        bot_reply = _generate_text(
+            prompt,
+            use_quality_model=True,
+            preferred_provider=preferred_provider,
+        )
 
     # Save messages to Supabase
     save_message_to_db("user", user_message)
