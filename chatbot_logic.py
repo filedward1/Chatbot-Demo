@@ -158,6 +158,16 @@ def _generate_with_ollama(prompt: str, use_quality_model: bool = False, temperat
     return (body.get("response") or "").strip()
 
 
+def _is_gemini_capacity_error(error: Exception):
+    text = str(error or "").lower()
+    return (
+        "503" in text
+        or "unavailable" in text
+        or "high demand" in text
+        or "try again later" in text
+    )
+
+
 def _generate_text(
     prompt: str,
     use_quality_model: bool = False,
@@ -177,6 +187,33 @@ def _generate_text(
                 )
         except Exception as e:
             logger.exception("LLM provider failed: %s", provider)
+
+            if provider == "gemini" and _is_gemini_capacity_error(e):
+                logger.warning("Gemini capacity error detected; switching to local Ollama fast model.")
+                try:
+                    return _generate_with_ollama(
+                        prompt,
+                        use_quality_model=False,
+                        temperature=temperature,
+                    )
+                except Exception as local_error:
+                    logger.exception("Local Ollama fast fallback after Gemini capacity error failed")
+                    last_error = local_error
+                    continue
+
+            if provider == "ollama" and use_quality_model:
+                logger.warning("Ollama quality model failed; retrying with fast model.")
+                try:
+                    return _generate_with_ollama(
+                        prompt,
+                        use_quality_model=False,
+                        temperature=temperature,
+                    )
+                except Exception as fast_error:
+                    logger.exception("Ollama fast fallback failed")
+                    last_error = fast_error
+                    continue
+
             last_error = e
             continue
 
