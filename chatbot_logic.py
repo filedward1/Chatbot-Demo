@@ -45,6 +45,9 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_NUM_CTX = _to_int(os.getenv("OLLAMA_NUM_CTX", "8192"), default=8192)
 OLLAMA_TIMEOUT_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"), default=90)
 OLLAMA_TIMEOUT_RETRY_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_RETRY_SECONDS", "180"), default=180)
+CHAT_FAST_FAIL_SECONDS = _to_int(os.getenv("CHAT_FAST_FAIL_SECONDS", "35"), default=35)
+INTENT_FAST_FAIL_SECONDS = _to_int(os.getenv("INTENT_FAST_FAIL_SECONDS", "20"), default=20)
+TITLE_FAST_FAIL_SECONDS = _to_int(os.getenv("TITLE_FAST_FAIL_SECONDS", "12"), default=12)
 
 # Initialize Supabase client
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
@@ -137,7 +140,12 @@ def _generate_with_gemini(prompt: str, temperature: float = 0.2):
     return (response.text or "").strip()
 
 
-def _generate_with_ollama(prompt: str, use_quality_model: bool = False, temperature: float = 0.2):
+def _generate_with_ollama(
+    prompt: str,
+    use_quality_model: bool = False,
+    temperature: float = 0.2,
+    timeout_override: int | None = None,
+):
     model_name = OLLAMA_MODEL_QUALITY if use_quality_model else OLLAMA_MODEL_FAST
     payload = {
         "model": model_name,
@@ -154,7 +162,10 @@ def _generate_with_ollama(prompt: str, use_quality_model: bool = False, temperat
     if "localhost" in OLLAMA_URL:
         url_candidates.append(OLLAMA_URL.replace("localhost", "127.0.0.1"))
 
-    timeout_candidates = [OLLAMA_TIMEOUT_SECONDS, OLLAMA_TIMEOUT_RETRY_SECONDS]
+    if timeout_override and timeout_override > 0:
+        timeout_candidates = [timeout_override]
+    else:
+        timeout_candidates = [OLLAMA_TIMEOUT_SECONDS, OLLAMA_TIMEOUT_RETRY_SECONDS]
     seen = set()
     last_error = None
 
@@ -231,6 +242,7 @@ def _generate_text(
     use_quality_model: bool = False,
     temperature: float = 0.2,
     preferred_provider: str | None = None,
+    fast_fail_seconds: int | None = None,
 ):
     last_error = None
     for provider in _get_provider_order_with_preference(preferred_provider):
@@ -242,6 +254,7 @@ def _generate_text(
                     prompt,
                     use_quality_model=use_quality_model,
                     temperature=temperature,
+                    timeout_override=fast_fail_seconds,
                 )
         except Exception as e:
             logger.exception("LLM provider failed: %s", provider)
@@ -253,6 +266,7 @@ def _generate_text(
                         prompt,
                         use_quality_model=False,
                         temperature=temperature,
+                        timeout_override=fast_fail_seconds,
                     )
                 except Exception as local_error:
                     logger.exception("Local Ollama fast fallback after Gemini capacity/quota error failed")
@@ -275,6 +289,7 @@ def _generate_text(
                         prompt,
                         use_quality_model=False,
                         temperature=temperature,
+                        timeout_override=fast_fail_seconds,
                     )
                 except Exception as fast_error:
                     logger.exception("Ollama fast fallback failed")
@@ -314,7 +329,7 @@ def _extract_json_object(text: str):
     return None
 
 
-def _generate_json(prompt: str, use_quality_model: bool = True):
+def _generate_json(prompt: str, use_quality_model: bool = True, fast_fail_seconds: int | None = None):
     strict_prompt = (
         f"{prompt}\n\n"
         "Output rules:\n"
@@ -326,6 +341,7 @@ def _generate_json(prompt: str, use_quality_model: bool = True):
         strict_prompt,
         use_quality_model=use_quality_model,
         temperature=0.0,
+        fast_fail_seconds=fast_fail_seconds,
     )
     return _extract_json_object(raw)
 
@@ -668,6 +684,7 @@ def _expound_troubleshooting_idea(issue: str, main_idea: str):
             prompt,
             use_quality_model=True,
             preferred_provider=("gemini" if LLM_MODE == "hybrid" else None),
+            fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
         )
     except Exception:
         return ""
@@ -919,7 +936,11 @@ def extract_intent(user_message, conversation_history=None):
     Return JSON only.
     """
 
-    return _generate_json(intent_prompt, use_quality_model=True)
+    return _generate_json(
+        intent_prompt,
+        use_quality_model=True,
+        fast_fail_seconds=INTENT_FAST_FAIL_SECONDS,
+    )
 
 def create_conversation_in_db():
     # """Create a new conversation record in the database"""
@@ -1000,7 +1021,11 @@ def maybe_generate_title_for_session(session_id: str):
     """
 
     try:
-        title = _generate_text(prompt, use_quality_model=False).strip().strip('"').strip("'")
+        title = _generate_text(
+            prompt,
+            use_quality_model=False,
+            fast_fail_seconds=TITLE_FAST_FAIL_SECONDS,
+        ).strip().strip('"').strip("'")
         if not title:
             title = fallback_title
 
@@ -1111,6 +1136,7 @@ def get_bot_response(user_message, session_id=None):
                 prompt,
                 use_quality_model=True,
                 preferred_provider=preferred_provider,
+                fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
             )
         except Exception:
             logger.exception("Primary response generation failed")
