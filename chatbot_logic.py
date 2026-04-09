@@ -850,6 +850,23 @@ def _resolve_issue(user_message: str, conversation_history, brand_entries):
         key=lambda x: x.lower(),
     )
 
+    printer_issue_aliases = {
+        "not printing": [
+            "out of paper",
+            "paper jam",
+            "paper tray",
+            "paper not detected",
+            "printer says out of paper",
+            "won't print",
+            "will not print",
+            "printing error",
+        ],
+    }
+
+    for canonical_issue, aliases in printer_issue_aliases.items():
+        if canonical_issue in known_issues and any(alias in search_space for alias in aliases):
+            return canonical_issue, known_issues
+
     for issue in known_issues:
         if issue.lower() in search_space:
             return issue, known_issues
@@ -877,6 +894,14 @@ def _is_support_request(user_message: str, conversation_history=None):
             "warranty",
             "rma",
             "support",
+            "printer",
+            "paper jam",
+            "out of paper",
+            "paper tray",
+            "toner",
+            "ink",
+            "won't print",
+            "will not print",
         ],
     )
 
