@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify
+import logging
 from chatbot_logic import (
     get_bot_response,
     reset_chat,
@@ -12,6 +13,9 @@ from chatbot_logic import (
     get_catalog_diagnostics,
 )
 import chatbot_logic
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("lexa.app")
 
 app = Flask(__name__)
 
@@ -37,7 +41,7 @@ def chat():
             "title": title,
         })
     except Exception as e:
-        print(f"Error in /chat: {e}")
+        logger.exception("Error in /chat")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/reset", methods=["POST"])

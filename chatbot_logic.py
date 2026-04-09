@@ -5,10 +5,14 @@ import os
 import json
 import re
 import requests
+import logging
 
 import uuid
 from datetime import datetime
 from supabase import create_client, Client
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("lexa.chatbot")
 
 # Current session ID
 current_session_id = str(uuid.uuid4())
@@ -43,7 +47,7 @@ OLLAMA_TIMEOUT_SECONDS = _to_int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"), defa
 
 # Initialize Supabase client
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
-    print("Supabase credentials not found. Check your .env file.")
+    logger.error("Supabase credentials not found. Check your .env file.")
     exit()
 
 supabase: Client = create_client(
@@ -63,7 +67,7 @@ if os.getenv("GEMINI_API_KEY"):
     try:
         client = genai.Client()
     except Exception as e:
-        print(f"Gemini client initialization failed: {e}")
+        logger.exception("Gemini client initialization failed")
         client = None
 
 system_prompt = """
@@ -172,6 +176,7 @@ def _generate_text(
                     temperature=temperature,
                 )
         except Exception as e:
+            logger.exception("LLM provider failed: %s", provider)
             last_error = e
             continue
 
@@ -281,7 +286,7 @@ def _fetch_rows(table_name: str, columns: str = "*"):
         }
         return rows
     except Exception as e:
-        print(f"Error fetching {table_name}: {e}")
+        logger.exception("Error fetching table '%s'", table_name)
         last_fetch_status[table_name] = {
             "ok": False,
             "count": 0,
@@ -289,6 +294,16 @@ def _fetch_rows(table_name: str, columns: str = "*"):
             "checked_at": datetime.now().isoformat(),
         }
         return []
+
+
+def _table_fetch_failed(table_name: str):
+    status = last_fetch_status.get(table_name) or {}
+    return status.get("ok") is False
+
+
+def _table_fetch_error(table_name: str):
+    status = last_fetch_status.get(table_name) or {}
+    return status.get("error")
 
 
 def fetch_product_catalog():
@@ -611,12 +626,24 @@ def get_catalog_diagnostics():
 def handle_troubleshooting(user_message, conversation_history=None):
     warranty_data = fetch_warranty_entries()
     troubleshooting_data = fetch_troubleshooting_entries()
-    if not warranty_data and not troubleshooting_data:
+
+    warranty_failed = _table_fetch_failed("warranty")
+    troubleshooting_failed = _table_fetch_failed("troubleshooting")
+
+    if troubleshooting_failed and not troubleshooting_data:
+        logger.error("Troubleshooting table fetch failed: %s", _table_fetch_error("troubleshooting"))
         return "LEXA here. I can't access troubleshooting records right now. Please try again shortly."
+
+    if not warranty_data and not troubleshooting_data:
+        return "LEXA here. Troubleshooting and warranty records are currently empty. Please ask your admin to populate the tables."
 
     if _is_warranty_request(user_message, conversation_history):
         if not warranty_data:
-            return "LEXA here. I can't access warranty records right now. Please try again shortly."
+            if warranty_failed:
+                logger.error("Warranty table fetch failed: %s", _table_fetch_error("warranty"))
+                return "LEXA here. I can't access warranty records right now. Please try again shortly."
+
+            return "LEXA here. Warranty records are empty right now. Please ask your admin to add warranty entries."
 
         resolved_brand, known_brands = _resolve_brand(user_message, conversation_history, warranty_data)
         if not resolved_brand:
@@ -641,7 +668,11 @@ def handle_troubleshooting(user_message, conversation_history=None):
         return f"LEXA here. I found {resolved_brand}, but there is no warranty lookup link saved yet."
 
     if not troubleshooting_data:
-        return "LEXA here. I can't access troubleshooting records right now. Please try again shortly."
+        if troubleshooting_failed:
+            logger.error("Troubleshooting table fetch failed: %s", _table_fetch_error("troubleshooting"))
+            return "LEXA here. I can't access troubleshooting records right now. Please try again shortly."
+
+        return "LEXA here. Troubleshooting records are empty right now. Please ask your admin to add SOP entries."
 
     resolved_issue, known_issues = _resolve_issue(user_message, conversation_history, troubleshooting_data)
     if not resolved_issue:
@@ -715,6 +746,7 @@ def create_conversation_in_db():
         }).execute()
         return response.data
     except Exception as e:
+        logger.exception("Failed to create conversation record")
         # It may already exist (e.g. restoring an existing session)
         return None
 
@@ -833,7 +865,7 @@ def save_message_to_db(role, content):
 
         return response.data
     except Exception as e:
-        print(f"Error saving message: {e}")
+        logger.exception("Error saving message")
         return None
     
 def get_bot_response(user_message, session_id=None):
@@ -918,7 +950,7 @@ def get_conversation_history():
         
         return conversations_dict
     except Exception as e:
-        print(f"Error fetching conversation history: {e}")
+        logger.exception("Error fetching conversation history")
         return {}
 
 def get_conversation_messages(session_id):
@@ -939,7 +971,7 @@ def get_conversation_messages(session_id):
             "messages": messages
         }
     except Exception as e:
-        print(f"Error fetching messages: {e}")
+        logger.exception("Error fetching messages")
         return {"id": session_id, "messages": []}
 
 
@@ -950,7 +982,7 @@ def delete_conversation(session_id: str):
         supabase.table("conversation").delete().eq("id", session_id).execute()
         return True
     except Exception as e:
-        print(f"Error deleting conversation: {e}")
+        logger.exception("Error deleting conversation")
         return False
 
 

@@ -13,6 +13,26 @@ let renameModalSessionId = null;
 let currentHistoryDeleteConfirmLi = null;
 let titlebarDeleteConfirming = false;
 
+function logClientError(label, details) {
+    console.log(`[client-error] ${label}`, details || "");
+}
+
+window.addEventListener("error", (event) => {
+    logClientError("window.error", {
+        message: event.message,
+        source: event.filename,
+        line: event.lineno,
+        column: event.colno,
+        stack: event.error ? event.error.stack : undefined,
+    });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+    logClientError("window.unhandledrejection", {
+        reason: event.reason,
+    });
+});
+
 const waitingMessages = [
     "Overclocking my brain... hang tight while I find those specs!",
     "Lexa is currently deep in the database. Don't close the lid just yet!",
@@ -618,7 +638,7 @@ async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
             }
             await loadHistory();
         } catch (error) {
-            console.error("[inline rename] Failed to save title:", error);
+            logClientError("[inline rename] Failed to save title", error);
             setHistoryActionLoadingState(li, false);
             appendMessage("bot", "Unable to rename conversation right now.");
         }
@@ -778,7 +798,7 @@ async function sendMessage() {
         try {
             data = rawBody ? JSON.parse(rawBody) : {};
         } catch (parseError) {
-            console.error("[sendMessage] /chat returned non-JSON body:", {
+            logClientError("[sendMessage] /chat returned non-JSON body", {
                 status: response.status,
                 statusText: response.statusText,
                 bodyPreview: rawBody.slice(0, 500)
@@ -816,7 +836,7 @@ async function sendMessage() {
         loadHistory();
 
     } catch (error) {
-        console.error("[sendMessage] Fetch /chat failed:", error);
+        logClientError("[sendMessage] Fetch /chat failed", error);
         clearWaitingIndicator();
         if (shouldShowTitleLoading) {
             setConversationTitle("New Conversation");
@@ -880,7 +900,7 @@ async function createNewChat() {
         const data = await response.json();
         currentSessionId = data.session_id || null;
     } catch (error) {
-        console.error("[createNewChat] Fetch /reset failed:", error);
+        logClientError("[createNewChat] Fetch /reset failed", error);
         // Keep the UI usable even if reset API is temporarily unavailable.
         currentSessionId = null;
     }
@@ -1038,7 +1058,7 @@ async function loadHistory() {
                 setHistoryActionLoadingState(li, true);
                 await handleDeleteConversation(id);
             } catch (error) {
-                console.error("[history delete] Failed to delete conversation:", error);
+                logClientError("[history delete] Failed to delete conversation", error);
                 setHistoryActionLoadingState(li, false);
                 appendMessage("bot", "Unable to delete conversation right now.");
             }
@@ -1204,7 +1224,7 @@ window.onload = () => {
                 openRenameLoadingOverlay();
                 await handleDeleteConversation(currentSessionId);
             } catch (error) {
-                console.error("[titlebar delete] Failed to delete conversation:", error);
+                logClientError("[titlebar delete] Failed to delete conversation", error);
                 appendMessage("bot", "Unable to delete conversation right now.");
             } finally {
                 closeRenameModal();
@@ -1226,7 +1246,7 @@ window.onload = () => {
             try {
                 await submitRenameModal();
             } catch (error) {
-                console.error("[renameSave] submitRenameModal failed:", error);
+                logClientError("[renameSave] submitRenameModal failed", error);
                 appendMessage("bot", "Unable to rename conversation right now.");
             }
         });
@@ -1240,7 +1260,7 @@ window.onload = () => {
                 try {
                     await submitRenameModal();
                 } catch (error) {
-                    console.error("[renameInput Enter] submitRenameModal failed:", error);
+                    logClientError("[renameInput Enter] submitRenameModal failed", error);
                     appendMessage("bot", "Unable to rename conversation right now.");
                 }
             }
