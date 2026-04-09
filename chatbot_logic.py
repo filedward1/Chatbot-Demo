@@ -277,10 +277,12 @@ def _expound_troubleshooting_idea(issue: str, main_idea: str):
     - Add one line after it: Why this helps: <one simple sentence>
     - Then provide 3-5 short numbered steps.
     - Each step should be specific and easy to follow (about 8-14 words).
-    - Keep the full response concise and clear.
+    - Keep the full response concise and clear, with troubleshooting as the main content.
     - Mention one simple caution/safety reminder only if relevant.
     - Do not invent product-specific details that were not provided.
     - Do not include markdown headings, bullet symbols, or extra sections.
+    - Do not advertise, cross-sell, suggest buying new devices, or suggest upgrades.
+    - End with one short follow-up question asking for issue specifics (device model, exact error message, and when it happens) for more detailed troubleshooting.
     """
 
     try:
