@@ -11,6 +11,7 @@ from chatbot_logic import (
     get_conversation_title,
     delete_conversation,
     get_catalog_diagnostics,
+    get_llm_diagnostics,
 )
 import chatbot_logic
 
@@ -94,6 +95,11 @@ def remove_conversation(session_id):
 @app.route("/debug/catalog", methods=["GET"])
 def debug_catalog():
     return jsonify(get_catalog_diagnostics())
+
+
+@app.route("/debug/llm", methods=["GET"])
+def debug_llm():
+    return jsonify(get_llm_diagnostics())
 
 if __name__ == "__main__":
     app.run(debug=True)
