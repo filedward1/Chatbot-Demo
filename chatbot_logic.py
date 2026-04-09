@@ -463,6 +463,66 @@ def _build_main_troubleshooting_idea(steps_list):
     return "; ".join(cleaned)
 
 
+def _clean_step_text(step: str):
+    text = str(step or "").strip()
+    text = re.sub(r"^\d+[\.)]\s*", "", text)
+    return text.strip()
+
+
+def _format_troubleshooting_markdown(issue: str, main_idea: str, why_line: str, steps_list):
+    cleaned_steps = []
+    seen = set()
+    main_norm = _normalize_free_text(main_idea)
+
+    for raw in steps_list or []:
+        step = _clean_step_text(raw)
+        if not step:
+            continue
+        step_norm = _normalize_free_text(step)
+        if step_norm == main_norm:
+            continue
+        if step_norm in seen:
+            continue
+        seen.add(step_norm)
+        cleaned_steps.append(step)
+
+    lines = [
+        f"LEXA here. For issue '{issue}', follow this Advanced Technical Troubleshooting (SOP):",
+        "",
+        f"Main idea: {main_idea}",
+    ]
+
+    if why_line:
+        lines.append(f"Why this helps: {why_line}")
+
+    if cleaned_steps:
+        lines.extend(["", "Steps:"])
+        for idx, step in enumerate(cleaned_steps, start=1):
+            lines.append(f"{idx}. {step}")
+
+    return "\n".join(lines)
+
+
+def _parse_expanded_troubleshooting_text(expanded_text: str, fallback_main_idea: str):
+    lines = [line.strip() for line in (expanded_text or "").splitlines() if line.strip()]
+    parsed_main_idea = fallback_main_idea
+    why_line = ""
+    steps = []
+
+    for line in lines:
+        lowered = line.lower()
+        if lowered.startswith("main idea:"):
+            parsed_main_idea = line.split(":", 1)[1].strip() or fallback_main_idea
+            continue
+        if lowered.startswith("why this helps:"):
+            why_line = line.split(":", 1)[1].strip()
+            continue
+        if re.match(r"^\d+[\.)]\s+", line):
+            steps.append(line)
+
+    return parsed_main_idea, why_line, steps
+
+
 def _expound_troubleshooting_idea(issue: str, main_idea: str):
     """Use configured LLM provider to expand a concise troubleshooting idea."""
     if not main_idea:
@@ -698,15 +758,25 @@ def handle_troubleshooting(user_message, conversation_history=None):
     main_idea = _build_main_troubleshooting_idea(steps_list)
     expanded_guidance = _expound_troubleshooting_idea(resolved_issue, main_idea)
     if expanded_guidance:
-        return f"LEXA here. For issue '{resolved_issue}':\n{expanded_guidance}"
+        parsed_main_idea, why_line, parsed_steps = _parse_expanded_troubleshooting_text(
+            expanded_guidance,
+            fallback_main_idea=main_idea,
+        )
+        if not parsed_steps:
+            parsed_steps = steps_list
+        return _format_troubleshooting_markdown(
+            resolved_issue,
+            parsed_main_idea,
+            why_line,
+            parsed_steps,
+        )
 
     # Fallback if LLM expansion fails.
-    steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps_list)])
-    return (
-        f"LEXA here. For issue '{resolved_issue}', "
-        "follow this Advanced Technical Troubleshooting (SOP):\n"
-        f"Main idea: {main_idea}\n"
-        f"{steps}"
+    return _format_troubleshooting_markdown(
+        resolved_issue,
+        main_idea,
+        "",
+        steps_list,
     )
 
 def extract_intent(user_message, conversation_history=None):
