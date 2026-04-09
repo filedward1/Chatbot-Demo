@@ -168,6 +168,17 @@ def _is_gemini_capacity_error(error: Exception):
     )
 
 
+def _is_gemini_quota_error(error: Exception):
+    text = str(error or "").lower()
+    return (
+        "429" in text
+        or "resource_exhausted" in text
+        or "quota exceeded" in text
+        or "rate limit" in text
+        or "exceeded your current quota" in text
+    )
+
+
 def _is_ollama_connection_error(error: Exception):
     text = str(error or "").lower()
     return (
@@ -199,8 +210,8 @@ def _generate_text(
         except Exception as e:
             logger.exception("LLM provider failed: %s", provider)
 
-            if provider == "gemini" and _is_gemini_capacity_error(e):
-                logger.warning("Gemini capacity error detected; switching to local Ollama fast model.")
+            if provider == "gemini" and (_is_gemini_capacity_error(e) or _is_gemini_quota_error(e)):
+                logger.warning("Gemini capacity/quota error detected; switching to local Ollama fast model.")
                 try:
                     return _generate_with_ollama(
                         prompt,
@@ -208,7 +219,7 @@ def _generate_text(
                         temperature=temperature,
                     )
                 except Exception as local_error:
-                    logger.exception("Local Ollama fast fallback after Gemini capacity error failed")
+                    logger.exception("Local Ollama fast fallback after Gemini capacity/quota error failed")
                     last_error = local_error
                     continue
 
