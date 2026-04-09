@@ -168,6 +168,17 @@ def _is_gemini_capacity_error(error: Exception):
     )
 
 
+def _is_ollama_connection_error(error: Exception):
+    text = str(error or "").lower()
+    return (
+        "failed to establish a new connection" in text
+        or "connection refused" in text
+        or "winerror 10061" in text
+        or "max retries exceeded" in text
+        or "/api/generate" in text and "localhost" in text
+    )
+
+
 def _generate_text(
     prompt: str,
     use_quality_model: bool = False,
@@ -201,6 +212,15 @@ def _generate_text(
                     last_error = local_error
                     continue
 
+            if provider == "ollama" and _is_ollama_connection_error(e):
+                logger.warning("Ollama connection error detected; switching to Gemini API.")
+                try:
+                    return _generate_with_gemini(prompt, temperature=temperature)
+                except Exception as gemini_error:
+                    logger.exception("Gemini fallback after Ollama connection error failed")
+                    last_error = gemini_error
+                    continue
+
             if provider == "ollama" and use_quality_model:
                 logger.warning("Ollama quality model failed; retrying with fast model.")
                 try:
@@ -218,6 +238,11 @@ def _generate_text(
             continue
 
     if last_error:
+        if _is_ollama_connection_error(last_error):
+            raise RuntimeError(
+                "All LLM providers failed: Ollama is unreachable at "
+                f"{OLLAMA_URL}. Start Ollama with 'ollama serve' or configure GEMINI_API_KEY for API fallback."
+            )
         raise RuntimeError(f"All LLM providers failed: {last_error}")
     raise RuntimeError("No LLM provider available.")
 
