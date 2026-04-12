@@ -38,16 +38,24 @@ def _to_int(value, default=0):
         return default
 
 
+def _to_optional_int(value):
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    except Exception:
+        return None
+
+
 LLM_MODE = "gemini"
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 CHAT_FAST_FAIL_SECONDS = _to_int(os.getenv("CHAT_FAST_FAIL_SECONDS", "35"), default=35)
 INTENT_FAST_FAIL_SECONDS = _to_int(os.getenv("INTENT_FAST_FAIL_SECONDS", "20"), default=20)
 TITLE_FAST_FAIL_SECONDS = _to_int(os.getenv("TITLE_FAST_FAIL_SECONDS", "12"), default=12)
-LLM_MAX_OUTPUT_TOKENS = _to_int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "800"), default=800)
+LLM_MAX_OUTPUT_TOKENS = _to_optional_int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "0"))
 
 # Optional task-specific caps. Falls back to LLM_MAX_OUTPUT_TOKENS if unset.
-CHAT_MAX_OUTPUT_TOKENS = _to_int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", str(LLM_MAX_OUTPUT_TOKENS)), default=LLM_MAX_OUTPUT_TOKENS)
+CHAT_MAX_OUTPUT_TOKENS = _to_optional_int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", "0"))
 JSON_MAX_OUTPUT_TOKENS = _to_int(os.getenv("JSON_MAX_OUTPUT_TOKENS", "240"), default=240)
 TITLE_MAX_OUTPUT_TOKENS = _to_int(os.getenv("TITLE_MAX_OUTPUT_TOKENS", "48"), default=48)
 
@@ -108,14 +116,18 @@ def _generate_with_gemini(prompt: str, temperature: float = 0.2, max_output_toke
     if client is None:
         raise RuntimeError("Gemini is not configured (missing GEMINI_API_KEY).")
 
+    resolved_max_tokens = max_output_tokens if max_output_tokens is not None else LLM_MAX_OUTPUT_TOKENS
+    config_args = {
+        "system_instruction": system_prompt,
+        "temperature": temperature,
+    }
+    if resolved_max_tokens is not None:
+        config_args["max_output_tokens"] = resolved_max_tokens
+
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens or LLM_MAX_OUTPUT_TOKENS,
-        ),
+        config=types.GenerateContentConfig(**config_args),
     )
     return (response.text or "").strip()
 
