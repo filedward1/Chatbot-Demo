@@ -535,16 +535,43 @@ def _resolve_issue(user_message: str, conversation_history, brand_entries):
         "to", "was", "what", "when", "why", "with", "you",
     }
 
-    issue_keyword_profiles = {
-        "not printing": {
-            "print", "printing", "printer", "paper", "tray", "jam", "feed", "out",
-            "detected", "offline", "stuck", "queue", "cartridge", "ink", "toner",
-        },
-        "overheating": {
-            "overheat", "overheating", "hot", "heat", "fan", "vents", "temperature",
-            "throttle", "shutdown",
-        },
+    token_synonyms = {
+        "print": {"printer", "printing", "paper", "tray", "jam", "feed", "queue", "spool"},
+        "printer": {"print", "printing", "paper", "tray", "jam", "feed", "toner", "ink"},
+        "paper": {"tray", "feed", "sheet", "jam", "detected"},
+        "ink": {"cartridge", "toner", "low", "empty", "replace"},
+        "toner": {"cartridge", "ink", "low", "empty", "replace"},
+        "overheat": {"overheating", "heat", "hot", "fan", "thermal", "shutdown", "throttle"},
+        "overheating": {"overheat", "heat", "hot", "fan", "thermal", "shutdown", "throttle"},
+        "heat": {"hot", "overheat", "overheating", "thermal", "fan"},
+        "wifi": {"wireless", "network", "internet", "connection", "offline"},
+        "network": {"wifi", "wireless", "internet", "connection", "offline"},
+        "connect": {"connection", "connected", "reconnect", "offline", "detect"},
+        "detected": {"recognize", "recognised", "detect", "found", "missing"},
+        "not": {"wont", "won", "cannot", "cant", "unable", "failed", "fails"},
     }
+
+    def _normalize_token(token: str):
+        tok = (token or "").lower().strip()
+        if len(tok) > 5 and tok.endswith("ing"):
+            tok = tok[:-3]
+        elif len(tok) > 4 and tok.endswith("ed"):
+            tok = tok[:-2]
+        elif len(tok) > 4 and tok.endswith("es"):
+            tok = tok[:-2]
+        elif len(tok) > 3 and tok.endswith("s"):
+            tok = tok[:-1]
+        return tok
+
+    def _expand_issue_tokens(issue: str):
+        expanded = set()
+        for raw in _tokenize(issue):
+            token = _normalize_token(raw)
+            if not token or token in stopwords:
+                continue
+            expanded.add(token)
+            expanded.update(token_synonyms.get(token, set()))
+        return expanded
 
     def _semantic_issue_score(issue: str, text: str):
         lowered_issue = issue.lower()
@@ -554,12 +581,18 @@ def _resolve_issue(user_message: str, conversation_history, brand_entries):
         if lowered_issue in text:
             score += 10
 
-        issue_tokens = [tok for tok in _tokenize(lowered_issue) if tok not in stopwords]
-        text_tokens = set(_tokenize(text))
+        issue_tokens = [
+            _normalize_token(tok)
+            for tok in _tokenize(lowered_issue)
+            if _normalize_token(tok) not in stopwords
+        ]
+        text_tokens = {_normalize_token(tok) for tok in _tokenize(text)}
         score += sum(2 for tok in issue_tokens if tok in text_tokens)
 
-        profile = issue_keyword_profiles.get(lowered_issue, set())
-        score += sum(1 for tok in profile if tok in text_tokens)
+        # Expand each issue's own keywords with lightweight synonym sets.
+        # This gives all DB issues paraphrase tolerance, not only hardcoded ones.
+        issue_profile = _expand_issue_tokens(lowered_issue)
+        score += sum(1 for tok in issue_profile if tok in text_tokens)
 
         return score
 
