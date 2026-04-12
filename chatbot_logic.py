@@ -868,7 +868,7 @@ def _build_catalog_recommendation(user_message: str, conversation_history, catal
     if not laptops:
         return "LEXA here. I can't find laptop entries in the catalog right now."
 
-    context_text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}"
+    context_text = user_message
     query_tokens = _tokenize_text(context_text)
     query_lower = context_text.lower()
 
