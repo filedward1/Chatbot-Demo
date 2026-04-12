@@ -36,11 +36,16 @@ def chat():
     try:
         bot_reply = get_bot_response(user_message, session_id=session_id)
         title = get_conversation_title(chatbot_logic.current_session_id)
-        return jsonify({
+        response_data = {
             "reply": bot_reply,
             "session_id": chatbot_logic.current_session_id,
             "title": title,
-        })
+        }
+        # Include error details if available (for console logging only)
+        if chatbot_logic.last_api_error:
+            response_data["api_error"] = chatbot_logic.last_api_error
+            chatbot_logic.last_api_error = None  # Clear after sending
+        return jsonify(response_data)
     except Exception as e:
         logger.exception("Error in /chat")
         return jsonify({"error": str(e)}), 500

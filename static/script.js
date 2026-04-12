@@ -858,13 +858,9 @@ async function sendMessage() {
         // Show bot reply (render markdown if present)
         let replyText = data.reply || "";
         
-        // Extract and log error details if present, then strip from display
-        const errorMatch = replyText.match(/__ERROR_DETAILS__:(.+?)__END__\n\n/);
-        if (errorMatch) {
-            const errorDetails = errorMatch[1];
-            console.log("[google.genai.errors] Full Gemini API Error:", errorDetails);
-            // Remove the error marker completely before showing to user
-            replyText = replyText.replace(/__ERROR_DETAILS__:.+?__END__\n\n/, "");
+        // Log API error if present (sent separately in response, not in message text)
+        if (data.api_error) {
+            console.log("[google.genai.errors] Full Gemini API Error:", data.api_error);
         }
         
         const formattedReply = marked.parse(replyText);

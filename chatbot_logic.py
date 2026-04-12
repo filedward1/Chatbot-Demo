@@ -21,6 +21,7 @@ last_fetch_status = {}
 last_llm_error = None
 last_llm_error_at = None
 last_llm_success = None
+last_api_error = None
 
 load_dotenv()
 
@@ -1438,8 +1439,9 @@ def get_bot_response(user_message, session_id=None):
                 "LEXA here. I can't reach the Gemini API right now. "
                 "Please retry in a few seconds."
             )
-            # Attach error details so JavaScript can log them
-            bot_reply = f"__ERROR_DETAILS__:{error_str}__END__\n\n{bot_reply}"
+            # Store error details globally so the endpoint can send it separately
+            global last_api_error
+            last_api_error = error_str
 
     # Save messages to Supabase
     save_message_to_db("user", user_message)
