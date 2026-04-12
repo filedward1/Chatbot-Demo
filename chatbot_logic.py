@@ -44,7 +44,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 CHAT_FAST_FAIL_SECONDS = _to_int(os.getenv("CHAT_FAST_FAIL_SECONDS", "35"), default=35)
 INTENT_FAST_FAIL_SECONDS = _to_int(os.getenv("INTENT_FAST_FAIL_SECONDS", "20"), default=20)
 TITLE_FAST_FAIL_SECONDS = _to_int(os.getenv("TITLE_FAST_FAIL_SECONDS", "12"), default=12)
-LLM_MAX_OUTPUT_TOKENS = _to_int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "560"), default=560)
+LLM_MAX_OUTPUT_TOKENS = _to_int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "800"), default=800)
 
 # Optional task-specific caps. Falls back to LLM_MAX_OUTPUT_TOKENS if unset.
 CHAT_MAX_OUTPUT_TOKENS = _to_int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", str(LLM_MAX_OUTPUT_TOKENS)), default=LLM_MAX_OUTPUT_TOKENS)
@@ -120,6 +120,19 @@ def _generate_with_gemini(prompt: str, temperature: float = 0.2, max_output_toke
     return (response.text or "").strip()
 
 
+def _looks_truncated(text: str):
+    cleaned = (text or "").strip()
+    if len(cleaned) < 40:
+        return False
+
+    # Consider common complete endings as non-truncated.
+    if re.search(r"[.!?)]['\"]?$", cleaned):
+        return False
+
+    # If the text ends on an unfinished word/phrase, treat it as truncated.
+    return bool(re.search(r"[a-z0-9]$", cleaned.lower()))
+
+
 def _mark_llm_error(error_text: str):
     global last_llm_error, last_llm_error_at
     last_llm_error = error_text
@@ -166,6 +179,7 @@ def _generate_text(
     fast_fail_seconds: int | None = None,
     use_fast_ctx: bool = False,
     max_output_tokens: int | None = None,
+    allow_auto_continue: bool = False,
 ):
     provider_start = time.time()
     try:
@@ -174,6 +188,25 @@ def _generate_text(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
+
+        if allow_auto_continue and _looks_truncated(result):
+            continue_prompt = f"""
+            Continue the text below from exactly where it ended.
+            - Do not repeat earlier sentences.
+            - Do not restart from the beginning.
+            - Return only the continuation text.
+
+            Text:
+            {result}
+            """
+            continuation = _generate_with_gemini(
+                continue_prompt,
+                temperature=temperature,
+                max_output_tokens=min(220, max_output_tokens or CHAT_MAX_OUTPUT_TOKENS),
+            )
+            if continuation:
+                result = f"{result} {continuation}".strip()
+
         elapsed_ms = int((time.time() - provider_start) * 1000)
         _mark_llm_success("gemini", GEMINI_MODEL, elapsed_ms)
         return result
@@ -503,6 +536,7 @@ def _expound_troubleshooting_idea(issue: str, main_idea: str):
             use_quality_model=True,
             fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
             max_output_tokens=CHAT_MAX_OUTPUT_TOKENS,
+            allow_auto_continue=True,
         )
     except Exception:
         return ""
@@ -1059,6 +1093,7 @@ def get_bot_response(user_message, session_id=None):
                 use_quality_model=True,
                 fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
                 max_output_tokens=CHAT_MAX_OUTPUT_TOKENS,
+                allow_auto_continue=True,
             )
         except Exception:
             logger.exception("Primary response generation failed")
