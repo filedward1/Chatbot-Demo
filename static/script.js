@@ -14,7 +14,7 @@ let currentHistoryDeleteConfirmLi = null;
 let titlebarDeleteConfirming = false;
 
 function logClientError(label, details) {
-    console.log(`[client-error] ${label}`, details || "");
+    console.error(`[client-error] ${label}`, details || "");
 }
 
 window.addEventListener("error", (event) => {
@@ -1037,11 +1037,17 @@ async function loadHistory() {
     const data = await response.json();
 
     // Cache for search
-    historyCache = Object.entries(data).map(([id, item]) => ({
-        id,
-        title: item.title || "Untitled",
-        createdAt: item.created_at || null,
-    }));
+    historyCache = Object.entries(data)
+        .map(([id, item]) => ({
+            id,
+            title: item.title || "Untitled",
+            createdAt: item.created_at || null,
+        }))
+        .sort((a, b) => {
+            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bTime - aTime;
+        });
 
     historyList.innerHTML = "";
     currentHistoryDeleteConfirmLi = null;
