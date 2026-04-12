@@ -44,7 +44,12 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 CHAT_FAST_FAIL_SECONDS = _to_int(os.getenv("CHAT_FAST_FAIL_SECONDS", "35"), default=35)
 INTENT_FAST_FAIL_SECONDS = _to_int(os.getenv("INTENT_FAST_FAIL_SECONDS", "20"), default=20)
 TITLE_FAST_FAIL_SECONDS = _to_int(os.getenv("TITLE_FAST_FAIL_SECONDS", "12"), default=12)
-LLM_MAX_OUTPUT_TOKENS = _to_int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "280"), default=280)
+LLM_MAX_OUTPUT_TOKENS = _to_int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "560"), default=560)
+
+# Optional task-specific caps. Falls back to LLM_MAX_OUTPUT_TOKENS if unset.
+CHAT_MAX_OUTPUT_TOKENS = _to_int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", str(LLM_MAX_OUTPUT_TOKENS)), default=LLM_MAX_OUTPUT_TOKENS)
+JSON_MAX_OUTPUT_TOKENS = _to_int(os.getenv("JSON_MAX_OUTPUT_TOKENS", "240"), default=240)
+TITLE_MAX_OUTPUT_TOKENS = _to_int(os.getenv("TITLE_MAX_OUTPUT_TOKENS", "48"), default=48)
 
 # Speed/quality controls. Defaults favor faster replies by avoiding extra LLM calls.
 ENABLE_INTENT_CLASSIFIER = _to_bool(os.getenv("ENABLE_INTENT_CLASSIFIER", "false"), default=False)
@@ -99,7 +104,7 @@ Instructions:
 """
 
 
-def _generate_with_gemini(prompt: str, temperature: float = 0.2):
+def _generate_with_gemini(prompt: str, temperature: float = 0.2, max_output_tokens: int | None = None):
     if client is None:
         raise RuntimeError("Gemini is not configured (missing GEMINI_API_KEY).")
 
@@ -109,7 +114,7 @@ def _generate_with_gemini(prompt: str, temperature: float = 0.2):
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=temperature,
-            max_output_tokens=LLM_MAX_OUTPUT_TOKENS,
+            max_output_tokens=max_output_tokens or LLM_MAX_OUTPUT_TOKENS,
         ),
     )
     return (response.text or "").strip()
@@ -139,6 +144,9 @@ def get_llm_diagnostics():
             "llm_mode": LLM_MODE,
             "gemini_model": GEMINI_MODEL,
             "max_output_tokens": LLM_MAX_OUTPUT_TOKENS,
+            "chat_max_output_tokens": CHAT_MAX_OUTPUT_TOKENS,
+            "json_max_output_tokens": JSON_MAX_OUTPUT_TOKENS,
+            "title_max_output_tokens": TITLE_MAX_OUTPUT_TOKENS,
             "enable_intent_classifier": ENABLE_INTENT_CLASSIFIER,
             "enable_troubleshooting_expansion": ENABLE_TROUBLESHOOTING_EXPANSION,
         },
@@ -157,10 +165,15 @@ def _generate_text(
     preferred_provider: str | None = None,
     fast_fail_seconds: int | None = None,
     use_fast_ctx: bool = False,
+    max_output_tokens: int | None = None,
 ):
     provider_start = time.time()
     try:
-        result = _generate_with_gemini(prompt, temperature=temperature)
+        result = _generate_with_gemini(
+            prompt,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
         elapsed_ms = int((time.time() - provider_start) * 1000)
         _mark_llm_success("gemini", GEMINI_MODEL, elapsed_ms)
         return result
@@ -198,6 +211,7 @@ def _generate_json(prompt: str, use_quality_model: bool = True, fast_fail_second
         use_quality_model=use_quality_model,
         temperature=0.0,
         fast_fail_seconds=fast_fail_seconds,
+        max_output_tokens=JSON_MAX_OUTPUT_TOKENS,
     )
     return _extract_json_object(raw)
 
@@ -488,6 +502,7 @@ def _expound_troubleshooting_idea(issue: str, main_idea: str):
             prompt,
             use_quality_model=True,
             fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
+            max_output_tokens=CHAT_MAX_OUTPUT_TOKENS,
         )
     except Exception:
         return ""
@@ -934,6 +949,7 @@ def maybe_generate_title_for_session(session_id: str):
             prompt,
             use_quality_model=False,
             fast_fail_seconds=TITLE_FAST_FAIL_SECONDS,
+            max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
         ).strip().strip('"').strip("'")
         if not title:
             title = fallback_title
@@ -1042,6 +1058,7 @@ def get_bot_response(user_message, session_id=None):
                 prompt,
                 use_quality_model=True,
                 fast_fail_seconds=CHAT_FAST_FAIL_SECONDS,
+                max_output_tokens=CHAT_MAX_OUTPUT_TOKENS,
             )
         except Exception:
             logger.exception("Primary response generation failed")
