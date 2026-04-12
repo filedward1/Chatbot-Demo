@@ -870,9 +870,66 @@ def _build_catalog_recommendation(user_message: str, conversation_history, catal
 
     context_text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}"
     query_tokens = _tokenize_text(context_text)
+    query_lower = context_text.lower()
 
     performance_tokens = {"aaa", "gaming", "game", "games", "fps", "gpu", "graphics", "rtx"}
     student_tokens = {"student", "school", "class", "study", "budget"}
+    portability_tokens = {"light", "portable", "thin", "travel", "battery", "ultrabook"}
+    creator_tokens = {"create", "editing", "video", "software", "coding", "programming", "dev"}
+
+    def infer_recommendation_theme():
+        if query_tokens.intersection(performance_tokens):
+            return "gaming"
+        if query_tokens.intersection(student_tokens):
+            return "budget"
+        if query_tokens.intersection(portability_tokens):
+            return "portable"
+        if query_tokens.intersection(creator_tokens):
+            return "productivity"
+        return "general"
+
+    theme = infer_recommendation_theme()
+
+    if theme == "gaming":
+        section_title = "Top Gaming Picks"
+        intro = "If you want strong AAA performance, these are the best laptops from the database right now:"
+        quick_guidance = [
+            "Go for the highest-performance option if you want better AAA frame rates.",
+            "Choose the more balanced pick if you want a mix of power and value.",
+            "Pick the budget option only if you can lower graphics settings a bit.",
+        ]
+    elif theme == "budget":
+        section_title = "Top Budget Picks"
+        intro = "Here are the best value laptops from the database for your budget:"
+        quick_guidance = [
+            "Choose the best-balanced model if you want the safest all-around value.",
+            "Pick the cheapest model if price is your top priority.",
+            "Stretch your budget only if you need noticeably better performance or storage.",
+        ]
+    elif theme == "portable":
+        section_title = "Top Portable Picks"
+        intro = "Here are the most portable laptops I found in the database:"
+        quick_guidance = [
+            "Choose the lightest option if you travel often.",
+            "Pick the battery-focused model if you need all-day use.",
+            "Go for the balanced model if you still want some performance headroom.",
+        ]
+    elif theme == "productivity":
+        section_title = "Top Productivity Picks"
+        intro = "Here are the laptops that make the most sense for coding, software work, or content creation:"
+        quick_guidance = [
+            "Choose the strongest CPU/RAM combo for software work and multitasking.",
+            "Pick the balanced option if you want a good mix of speed and value.",
+            "Choose the lighter option if you care about portability as much as power.",
+        ]
+    else:
+        section_title = "Recommended Laptops"
+        intro = "Here are the best laptop options I found in the database:"
+        quick_guidance = [
+            "Pick the top-ranked model if you want the safest all-around choice.",
+            "Choose the second option if you want a more balanced value pick.",
+            "Choose the third option if your budget is tighter.",
+        ]
 
     scored = []
     for item in laptops:
@@ -912,21 +969,67 @@ def _build_catalog_recommendation(user_message: str, conversation_history, catal
     scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
     selected = [row[2] for row in scored[:max_items]]
 
+    def summarize_best_for(item):
+        tags = str(item.get("tags", "")).lower()
+        tag_tokens = _tokenize_text(tags)
+
+        if theme == "gaming":
+            if tag_tokens.intersection(performance_tokens):
+                return "AAA gaming, heavy multitasking, and higher graphics settings"
+            return "general gaming with lower settings"
+
+        if theme == "budget":
+            if tag_tokens.intersection(student_tokens):
+                return "students and everyday use on a tighter budget"
+            return "budget-conscious everyday use"
+
+        if theme == "portable":
+            if tag_tokens.intersection(portability_tokens):
+                return "travel, school, and all-day mobility"
+            return "portable everyday use"
+
+        if theme == "productivity":
+            if tag_tokens.intersection(creator_tokens):
+                return "software work, coding, and multitasking"
+            return "general productivity and multitasking"
+
+        return "general everyday productivity"
+
     def format_php_price(value):
         try:
-            return f"Php (P){int(value):,}"
+            return f"Php (₱){int(value):,}"
         except Exception:
-            return "Php (P)N/A"
+            return "Php (₱)N/A"
 
     lines = [
-        "LEXA here. Based on your request, here are laptop recommendations from our catalog:",
+        "Hello! I'm LEXA, your Laptop EXpert Assistant.",
+        "",
+        intro,
+        "",
+        f"## {section_title}",
         "",
     ]
 
     for idx, item in enumerate(selected, start=1):
-        lines.append(
-            f"{idx}. {item.get('name', 'Unknown')} | {format_php_price(item.get('price'))} | tags: {item.get('tags', '')}"
+        lines.extend(
+            [
+                f"{idx}. **{item.get('name', 'Unknown')}**",
+                f"   - **Price:** {format_php_price(item.get('price'))}",
+                f"   - **Best For:** {summarize_best_for(item)}",
+                f"   - **Tags:** {item.get('tags', '')}",
+                "",
+            ]
         )
+
+    lines.extend(
+        [
+            "### LEXA's Quick Guidance",
+            "",
+        ]
+    )
+
+    for tip in quick_guidance:
+        lines.append(f"- {tip}")
 
     lines.extend(
         [
