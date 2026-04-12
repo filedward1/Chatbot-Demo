@@ -725,6 +725,104 @@ def _is_support_request(user_message: str, conversation_history=None):
     )
 
 
+def _is_recommendation_request(user_message: str, conversation_history=None):
+    text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    return _contains_any(
+        text,
+        [
+            "recommend",
+            "suggest",
+            "looking for",
+            "need a laptop",
+            "want a laptop",
+            "best laptop",
+            "gaming",
+            "aaa",
+            "student laptop",
+            "for school",
+        ],
+    )
+
+
+def _tokenize_text(text: str):
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _build_catalog_recommendation(user_message: str, conversation_history, catalog: dict, max_items: int = 3):
+    laptops = catalog.get("laptop", []) or []
+    if not laptops:
+        return "LEXA here. I can't find laptop entries in the catalog right now."
+
+    context_text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}"
+    query_tokens = _tokenize_text(context_text)
+
+    performance_tokens = {"aaa", "gaming", "game", "games", "fps", "gpu", "graphics", "rtx"}
+    student_tokens = {"student", "school", "class", "study", "budget"}
+
+    scored = []
+    for item in laptops:
+        name = str(item.get("name", "")).strip()
+        tags = str(item.get("tags", ""))
+        if not name:
+            continue
+
+        price = 0
+        try:
+            price = int(item.get("price") or 0)
+        except Exception:
+            price = 0
+
+        name_tokens = _tokenize_text(name)
+        tag_tokens = _tokenize_text(tags)
+        token_pool = name_tokens.union(tag_tokens)
+
+        score = 0
+        score += len(query_tokens.intersection(token_pool)) * 2
+
+        if query_tokens.intersection(performance_tokens):
+            if token_pool.intersection(performance_tokens):
+                score += 8
+            # Slightly prefer stronger machines for gaming requests.
+            score += min(price // 50000, 4)
+
+        if query_tokens.intersection(student_tokens):
+            if token_pool.intersection(student_tokens):
+                score += 4
+            # Slightly prefer lower cost for student/budget requests.
+            if price > 0:
+                score += max(0, 3 - min(price // 30000, 3))
+
+        scored.append((score, price, item))
+
+    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    selected = [row[2] for row in scored[:max_items]]
+
+    def format_php_price(value):
+        try:
+            return f"Php (P){int(value):,}"
+        except Exception:
+            return "Php (P)N/A"
+
+    lines = [
+        "LEXA here. Based on your request, here are laptop recommendations from our catalog:",
+        "",
+    ]
+
+    for idx, item in enumerate(selected, start=1):
+        lines.append(
+            f"{idx}. {item.get('name', 'Unknown')} | {format_php_price(item.get('price'))} | tags: {item.get('tags', '')}"
+        )
+
+    lines.extend(
+        [
+            "",
+            "Tell me your budget, and I can narrow this down further.",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
 def get_catalog_diagnostics():
     """Return a quick health snapshot for Supabase-backed catalog tables."""
     catalog = fetch_product_catalog()
@@ -1073,6 +1171,9 @@ def get_bot_response(user_message, session_id=None):
     intent_name = (intent_data or {}).get("intent", "")
     if intent_name in {"troubleshooting", "aftersales", "warranty"} or _is_support_request(user_message, recent_messages):
         bot_reply = handle_troubleshooting(user_message, conversation_history=recent_messages)
+    elif _is_recommendation_request(user_message, recent_messages):
+        catalog = fetch_product_catalog()
+        bot_reply = _build_catalog_recommendation(user_message, recent_messages, catalog)
     else:
         catalog = fetch_product_catalog()
         products_context = format_product_catalog(catalog)
