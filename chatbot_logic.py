@@ -44,6 +44,11 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 CHAT_FAST_FAIL_SECONDS = _to_int(os.getenv("CHAT_FAST_FAIL_SECONDS", "35"), default=35)
 INTENT_FAST_FAIL_SECONDS = _to_int(os.getenv("INTENT_FAST_FAIL_SECONDS", "20"), default=20)
 TITLE_FAST_FAIL_SECONDS = _to_int(os.getenv("TITLE_FAST_FAIL_SECONDS", "12"), default=12)
+LLM_MAX_OUTPUT_TOKENS = _to_int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "280"), default=280)
+
+# Speed/quality controls. Defaults favor faster replies by avoiding extra LLM calls.
+ENABLE_INTENT_CLASSIFIER = _to_bool(os.getenv("ENABLE_INTENT_CLASSIFIER", "false"), default=False)
+ENABLE_TROUBLESHOOTING_EXPANSION = _to_bool(os.getenv("ENABLE_TROUBLESHOOTING_EXPANSION", "false"), default=False)
 
 # Initialize Supabase client
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
@@ -104,6 +109,7 @@ def _generate_with_gemini(prompt: str, temperature: float = 0.2):
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=temperature,
+            max_output_tokens=LLM_MAX_OUTPUT_TOKENS,
         ),
     )
     return (response.text or "").strip()
@@ -132,6 +138,9 @@ def get_llm_diagnostics():
         "config": {
             "llm_mode": LLM_MODE,
             "gemini_model": GEMINI_MODEL,
+            "max_output_tokens": LLM_MAX_OUTPUT_TOKENS,
+            "enable_intent_classifier": ENABLE_INTENT_CLASSIFIER,
+            "enable_troubleshooting_expansion": ENABLE_TROUBLESHOOTING_EXPANSION,
         },
         "runtime": {
             "last_llm_error": last_llm_error,
@@ -529,6 +538,37 @@ def _resolve_issue(user_message: str, conversation_history, brand_entries):
         if issue.lower() in search_space:
             return issue, known_issues
 
+    # Fast deterministic pre-match to avoid an LLM call when wording still overlaps.
+    def _norm_tokens(text: str):
+        tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
+        normalized = []
+        for token in tokens:
+            tok = token
+            if len(tok) > 5 and tok.endswith("ing"):
+                tok = tok[:-3]
+            elif len(tok) > 4 and tok.endswith("ed"):
+                tok = tok[:-2]
+            elif len(tok) > 4 and tok.endswith("es"):
+                tok = tok[:-2]
+            elif len(tok) > 3 and tok.endswith("s"):
+                tok = tok[:-1]
+            if tok:
+                normalized.append(tok)
+        return set(normalized)
+
+    search_tokens = _norm_tokens(search_space)
+    best_issue = None
+    best_overlap = 0
+    for issue in known_issues:
+        issue_tokens = _norm_tokens(issue)
+        overlap = len(issue_tokens.intersection(search_tokens))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_issue = issue
+
+    if best_issue and best_overlap >= 2:
+        return best_issue, known_issues
+
     # Context-based resolver: infer the best issue from meaning using recent chat context.
     if known_issues:
         recent_context = _extract_recent_user_text(conversation_history)
@@ -746,6 +786,16 @@ def handle_troubleshooting(user_message, conversation_history=None):
         )
 
     main_idea = _build_main_troubleshooting_idea(steps_list)
+
+    if not ENABLE_TROUBLESHOOTING_EXPANSION:
+        # Faster path: return stored SOP directly without another model roundtrip.
+        return _format_troubleshooting_markdown(
+            resolved_issue,
+            main_idea,
+            "",
+            steps_list,
+        )
+
     expanded_guidance = _expound_troubleshooting_idea(resolved_issue, main_idea)
     if expanded_guidance:
         parsed_main_idea, why_line, parsed_steps = _parse_expanded_troubleshooting_text(
@@ -947,11 +997,13 @@ def get_bot_response(user_message, session_id=None):
     conv = get_conversation_messages(current_session_id)
     recent_messages = conv.get("messages", [])[-6:]
 
-    try:
-        intent_data = extract_intent(user_message, conversation_history=recent_messages)
-    except Exception:
-        logger.exception("Intent extraction failed; continuing with heuristic routing")
-        intent_data = None
+    intent_data = None
+    if ENABLE_INTENT_CLASSIFIER:
+        try:
+            intent_data = extract_intent(user_message, conversation_history=recent_messages)
+        except Exception:
+            logger.exception("Intent extraction failed; continuing with heuristic routing")
+            intent_data = None
 
     intent_name = (intent_data or {}).get("intent", "")
     if intent_name in {"troubleshooting", "aftersales", "warranty"} or _is_support_request(user_message, recent_messages):
