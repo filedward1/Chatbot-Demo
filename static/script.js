@@ -856,27 +856,22 @@ async function sendMessage() {
         clearWaitingIndicator();
 
         // Show bot reply (render markdown if present)
-        const replyText = data.reply || "";
+        let replyText = data.reply || "";
         
-        // Extract and log error details if present
-        const errorMatch = replyText.match(/__ERROR_DETAILS__:(.+?)__END__/);
+        // Extract and log error details if present, then strip from display
+        const errorMatch = replyText.match(/__ERROR_DETAILS__:(.+?)__END__\n\n/);
         if (errorMatch) {
             const errorDetails = errorMatch[1];
             console.log("[google.genai.errors] Full Gemini API Error:", errorDetails);
-            // Clean the error marker from displayed text
-            const cleanReply = replyText.replace(/__ERROR_DETAILS__:.+?__END__\n\n/, "");
-            const formattedReply = marked.parse(cleanReply);
-            appendMessage("bot", formattedReply, {
-                isHtml: true,
-                isError: isErrorBotReply(cleanReply),
-            });
-        } else {
-            const formattedReply = marked.parse(replyText);
-            appendMessage("bot", formattedReply, {
-                isHtml: true,
-                isError: isErrorBotReply(replyText),
-            });
+            // Remove the error marker completely before showing to user
+            replyText = replyText.replace(/__ERROR_DETAILS__:.+?__END__\n\n/, "");
         }
+        
+        const formattedReply = marked.parse(replyText);
+        appendMessage("bot", formattedReply, {
+            isHtml: true,
+            isError: isErrorBotReply(replyText),
+        });
 
         // Refresh history to show updated title (generated after first few messages)
         loadHistory();
