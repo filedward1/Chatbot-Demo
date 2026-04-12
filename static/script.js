@@ -640,7 +640,7 @@ async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
         } catch (error) {
             logClientError("[inline rename] Failed to save title", error);
             setHistoryActionLoadingState(li, false);
-            appendMessage("bot", "Unable to rename conversation right now.");
+            appendMessage("bot", "Unable to rename conversation right now.", { isError: true });
         }
     };
 
@@ -665,13 +665,14 @@ async function beginInlineHistoryRename(li, sessionId, currentTitle = "") {
 }
 
 function appendMessage(role, content, options = {}) {
-    const { isHtml = false, typing = false, id = null } = options;
+    const { isHtml = false, typing = false, id = null, isError = false } = options;
     const chatBox = document.getElementById("chat-box");
     if (!chatBox) return null;
 
     const row = document.createElement("div");
     row.className = `message-row ${role === "user" ? "message-user" : "message-bot"}`;
     if (typing) row.classList.add("typing");
+    if (isError && role === "bot") row.classList.add("message-error");
     if (id) row.id = id;
 
     const avatar = document.createElement("img");
@@ -681,6 +682,9 @@ function appendMessage(role, content, options = {}) {
 
     const bubble = document.createElement("div");
     bubble.className = `message-bubble ${role === "user" ? "user-bubble" : "bot-bubble"}`;
+    if (isError && role === "bot") {
+        bubble.classList.add("error-bubble");
+    }
 
     if (isHtml) {
         bubble.innerHTML = content;
@@ -698,6 +702,22 @@ function appendMessage(role, content, options = {}) {
 
     chatBox.appendChild(row);
     return row;
+}
+
+function isErrorBotReply(text) {
+    const reply = (text || "").trim();
+    if (!reply) return false;
+
+    const patterns = [
+        /can't reach the gemini api/i,
+        /can't access .* records/i,
+        /^error connecting to server\.?$/i,
+        /please retry in a few seconds/i,
+        /^unable to (delete|rename|update|save)/i,
+        /^lexa here\. i can't /i,
+    ];
+
+    return patterns.some((pattern) => pattern.test(reply));
 }
 
 function setWaitingText(waitingTextEl, text) {
@@ -829,8 +849,12 @@ async function sendMessage() {
         clearWaitingIndicator();
 
         // Show bot reply (render markdown if present)
-        const formattedReply = marked.parse(data.reply);
-        appendMessage("bot", formattedReply, { isHtml: true });
+        const replyText = data.reply || "";
+        const formattedReply = marked.parse(replyText);
+        appendMessage("bot", formattedReply, {
+            isHtml: true,
+            isError: isErrorBotReply(replyText),
+        });
 
         // Refresh history to show updated title (generated after first few messages)
         loadHistory();
@@ -842,7 +866,7 @@ async function sendMessage() {
             setConversationTitle("New Conversation");
             clearTitleLoadingRemarks();
         }
-        appendMessage("bot", "Error connecting to server.");
+        appendMessage("bot", "Error connecting to server.", { isError: true });
     }
 
     inputField.disabled = false;
@@ -1060,7 +1084,7 @@ async function loadHistory() {
             } catch (error) {
                 logClientError("[history delete] Failed to delete conversation", error);
                 setHistoryActionLoadingState(li, false);
-                appendMessage("bot", "Unable to delete conversation right now.");
+                appendMessage("bot", "Unable to delete conversation right now.", { isError: true });
             }
         });
 
@@ -1123,7 +1147,10 @@ async function loadConversation(sessionId, title = null) {
                     appendMessage("user", msg.content || "");
                 } else if (msg.role === "bot") {
                     const formatted = marked.parse(msg.content || "");
-                    appendMessage("bot", formatted, { isHtml: true });
+                    appendMessage("bot", formatted, {
+                        isHtml: true,
+                        isError: isErrorBotReply(msg.content || ""),
+                    });
                 }
             });
         } else if (data.messages[0].user) {
@@ -1131,7 +1158,10 @@ async function loadConversation(sessionId, title = null) {
             data.messages.forEach(msg => {
                 appendMessage("user", msg.user || "");
                 const botFormatted = marked.parse(msg.bot || "");
-                appendMessage("bot", botFormatted, { isHtml: true });
+                appendMessage("bot", botFormatted, {
+                    isHtml: true,
+                    isError: isErrorBotReply(msg.bot || ""),
+                });
             });
         }
     }
@@ -1225,7 +1255,7 @@ window.onload = () => {
                 await handleDeleteConversation(currentSessionId);
             } catch (error) {
                 logClientError("[titlebar delete] Failed to delete conversation", error);
-                appendMessage("bot", "Unable to delete conversation right now.");
+                appendMessage("bot", "Unable to delete conversation right now.", { isError: true });
             } finally {
                 closeRenameModal();
                 setTitlebarDeleteConfirmMode(false);
@@ -1247,7 +1277,7 @@ window.onload = () => {
                 await submitRenameModal();
             } catch (error) {
                 logClientError("[renameSave] submitRenameModal failed", error);
-                appendMessage("bot", "Unable to rename conversation right now.");
+                appendMessage("bot", "Unable to rename conversation right now.", { isError: true });
             }
         });
     }
@@ -1261,7 +1291,7 @@ window.onload = () => {
                     await submitRenameModal();
                 } catch (error) {
                     logClientError("[renameInput Enter] submitRenameModal failed", error);
-                    appendMessage("bot", "Unable to rename conversation right now.");
+                    appendMessage("bot", "Unable to rename conversation right now.", { isError: true });
                 }
             }
 

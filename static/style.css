@@ -799,6 +799,16 @@ html, body {
     border-radius: 16px 16px 16px 4px;
 }
 
+.message-bubble.error-bubble {
+    background: #ffe8e8;
+    border-color: #d96b6b;
+    color: #7a1d1d;
+}
+
+.message-bubble.error-bubble a {
+    color: #8f1f1f;
+}
+
 .message-bubble p {
     margin: 0 0 8px;
 }
