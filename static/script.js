@@ -857,17 +857,37 @@ async function sendMessage() {
 
         // Show bot reply (render markdown if present)
         const replyText = data.reply || "";
-        const formattedReply = marked.parse(replyText);
-        appendMessage("bot", formattedReply, {
-            isHtml: true,
-            isError: isErrorBotReply(replyText),
-        });
+        
+        // Extract and log error details if present
+        const errorMatch = replyText.match(/__ERROR_DETAILS__:(.+?)__END__/);
+        if (errorMatch) {
+            const errorDetails = errorMatch[1];
+            console.log("[google.genai.errors] Full Gemini API Error:", errorDetails);
+            // Clean the error marker from displayed text
+            const cleanReply = replyText.replace(/__ERROR_DETAILS__:.+?__END__\n\n/, "");
+            const formattedReply = marked.parse(cleanReply);
+            appendMessage("bot", formattedReply, {
+                isHtml: true,
+                isError: isErrorBotReply(cleanReply),
+            });
+        } else {
+            const formattedReply = marked.parse(replyText);
+            appendMessage("bot", formattedReply, {
+                isHtml: true,
+                isError: isErrorBotReply(replyText),
+            });
+        }
 
         // Refresh history to show updated title (generated after first few messages)
         loadHistory();
 
     } catch (error) {
         logClientError("[sendMessage] Fetch /chat failed", error);
+        logClientError("[sendMessage] Full error object", {
+            message: error.message,
+            stack: error.stack,
+            name: error.name,
+        });
         clearWaitingIndicator();
         if (shouldShowTitleLoading) {
             setConversationTitle("New Conversation");

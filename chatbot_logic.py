@@ -1431,12 +1431,15 @@ def get_bot_response(user_message, session_id=None):
                 max_output_tokens=CHAT_MAX_OUTPUT_TOKENS,
                 allow_auto_continue=True,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Primary response generation failed")
+            error_str = str(e)
             bot_reply = (
                 "LEXA here. I can't reach the Gemini API right now. "
                 "Please retry in a few seconds."
             )
+            # Attach error details so JavaScript can log them
+            bot_reply = f"__ERROR_DETAILS__:{error_str}__END__\n\n{bot_reply}"
 
     # Save messages to Supabase
     save_message_to_db("user", user_message)
