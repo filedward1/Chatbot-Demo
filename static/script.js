@@ -17,6 +17,16 @@ function logClientError(label, details) {
     console.error(`[client-error] ${label}`, details || "");
 }
 
+function logServerResponseError(label, response, bodyText, parsedBody) {
+    console.error(`[server-error] ${label}`, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        body: bodyText,
+        parsedBody,
+    });
+}
+
 window.addEventListener("error", (event) => {
     logClientError("window.error", {
         message: event.message,
@@ -818,16 +828,13 @@ async function sendMessage() {
         try {
             data = rawBody ? JSON.parse(rawBody) : {};
         } catch (parseError) {
-            logClientError("[sendMessage] /chat returned non-JSON body", {
-                status: response.status,
-                statusText: response.statusText,
-                bodyPreview: rawBody.slice(0, 500)
-            });
+            logServerResponseError("/chat returned non-JSON body", response, rawBody.slice(0, 500), null);
             throw parseError;
         }
 
         if (!response.ok) {
             const serverError = (data && (data.error || data.message)) || `HTTP ${response.status}`;
+            logServerResponseError("/chat returned error response", response, rawBody.slice(0, 1000), data);
             throw new Error(serverError);
         }
 
