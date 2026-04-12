@@ -525,26 +525,89 @@ def _resolve_issue(user_message: str, conversation_history, brand_entries):
         key=lambda x: x.lower(),
     )
 
-    printer_issue_aliases = {
-        "not printing": [
-            "out of paper",
-            "paper jam",
-            "paper tray",
-            "paper not detected",
-            "printer says out of paper",
-            "won't print",
-            "will not print",
-            "printing error",
-        ],
+    def _tokenize(text: str):
+        return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+    stopwords = {
+        "a", "an", "and", "are", "as", "at", "be", "but", "by", "does",
+        "even", "for", "has", "have", "i", "if", "in", "is", "it", "its",
+        "my", "of", "on", "or", "says", "so", "that", "the", "there", "though",
+        "to", "was", "what", "when", "why", "with", "you",
     }
 
-    for canonical_issue, aliases in printer_issue_aliases.items():
-        if canonical_issue in known_issues and any(alias in search_space for alias in aliases):
-            return canonical_issue, known_issues
+    issue_keyword_profiles = {
+        "not printing": {
+            "print", "printing", "printer", "paper", "tray", "jam", "feed", "out",
+            "detected", "offline", "stuck", "queue", "cartridge", "ink", "toner",
+        },
+        "overheating": {
+            "overheat", "overheating", "hot", "heat", "fan", "vents", "temperature",
+            "throttle", "shutdown",
+        },
+    }
 
+    def _semantic_issue_score(issue: str, text: str):
+        lowered_issue = issue.lower()
+        score = 0
+
+        # Strong exact phrase match.
+        if lowered_issue in text:
+            score += 10
+
+        issue_tokens = [tok for tok in _tokenize(lowered_issue) if tok not in stopwords]
+        text_tokens = set(_tokenize(text))
+        score += sum(2 for tok in issue_tokens if tok in text_tokens)
+
+        profile = issue_keyword_profiles.get(lowered_issue, set())
+        score += sum(1 for tok in profile if tok in text_tokens)
+
+        return score
+
+    best_issue = None
+    best_score = 0
     for issue in known_issues:
-        if issue.lower() in search_space:
-            return issue, known_issues
+        score = _semantic_issue_score(issue, search_space)
+        if score > best_score:
+            best_score = score
+            best_issue = issue
+
+    # Require a minimal score so generic support queries don't force a wrong issue.
+    if best_issue and best_score >= 3:
+        return best_issue, known_issues
+
+    # LLM fallback: select the closest issue by meaning when there is no lexical overlap.
+    if known_issues:
+        issue_pick_prompt = f"""
+        Choose the closest issue from the provided list for this support request.
+
+        User request:
+        {search_space}
+
+        Candidate issues:
+        {json.dumps(known_issues, ensure_ascii=True)}
+
+        Return JSON with exactly this shape:
+        {{"issue": "<one candidate issue or null>", "confidence": <0 to 1 number>}}
+
+        Rules:
+        - Pick only from candidate issues.
+        - If none are related, set issue to null and confidence to 0.
+        - Favor practical troubleshooting intent over exact wording.
+        """
+
+        try:
+            pick = _generate_json(
+                issue_pick_prompt,
+                use_quality_model=True,
+                fast_fail_seconds=INTENT_FAST_FAIL_SECONDS,
+            ) or {}
+            chosen_issue = str(pick.get("issue") or "").strip()
+            confidence = float(pick.get("confidence", 0) or 0)
+
+            if chosen_issue in known_issues and confidence >= 0.45:
+                return chosen_issue, known_issues
+        except Exception:
+            logger.exception("LLM fallback issue resolution failed")
 
     return None, known_issues
 
