@@ -525,107 +525,50 @@ def _resolve_issue(user_message: str, conversation_history, brand_entries):
         key=lambda x: x.lower(),
     )
 
-    def _tokenize(text: str):
-        return re.findall(r"[a-z0-9]+", (text or "").lower())
-
-    stopwords = {
-        "a", "an", "and", "are", "as", "at", "be", "but", "by", "does",
-        "even", "for", "has", "have", "i", "if", "in", "is", "it", "its",
-        "my", "of", "on", "or", "says", "so", "that", "the", "there", "though",
-        "to", "was", "what", "when", "why", "with", "you",
-    }
-
-    token_synonyms = {
-        "print": {"printer", "printing", "paper", "tray", "jam", "feed", "queue", "spool"},
-        "printer": {"print", "printing", "paper", "tray", "jam", "feed", "toner", "ink"},
-        "paper": {"tray", "feed", "sheet", "jam", "detected"},
-        "ink": {"cartridge", "toner", "low", "empty", "replace"},
-        "toner": {"cartridge", "ink", "low", "empty", "replace"},
-        "overheat": {"overheating", "heat", "hot", "fan", "thermal", "shutdown", "throttle"},
-        "overheating": {"overheat", "heat", "hot", "fan", "thermal", "shutdown", "throttle"},
-        "heat": {"hot", "overheat", "overheating", "thermal", "fan"},
-        "wifi": {"wireless", "network", "internet", "connection", "offline"},
-        "network": {"wifi", "wireless", "internet", "connection", "offline"},
-        "connect": {"connection", "connected", "reconnect", "offline", "detect"},
-        "detected": {"recognize", "recognised", "detect", "found", "missing"},
-        "not": {"wont", "won", "cannot", "cant", "unable", "failed", "fails"},
-    }
-
-    def _normalize_token(token: str):
-        tok = (token or "").lower().strip()
-        if len(tok) > 5 and tok.endswith("ing"):
-            tok = tok[:-3]
-        elif len(tok) > 4 and tok.endswith("ed"):
-            tok = tok[:-2]
-        elif len(tok) > 4 and tok.endswith("es"):
-            tok = tok[:-2]
-        elif len(tok) > 3 and tok.endswith("s"):
-            tok = tok[:-1]
-        return tok
-
-    def _expand_issue_tokens(issue: str):
-        expanded = set()
-        for raw in _tokenize(issue):
-            token = _normalize_token(raw)
-            if not token or token in stopwords:
-                continue
-            expanded.add(token)
-            expanded.update(token_synonyms.get(token, set()))
-        return expanded
-
-    def _semantic_issue_score(issue: str, text: str):
-        lowered_issue = issue.lower()
-        score = 0
-
-        # Strong exact phrase match.
-        if lowered_issue in text:
-            score += 10
-
-        issue_tokens = [
-            _normalize_token(tok)
-            for tok in _tokenize(lowered_issue)
-            if _normalize_token(tok) not in stopwords
-        ]
-        text_tokens = {_normalize_token(tok) for tok in _tokenize(text)}
-        score += sum(2 for tok in issue_tokens if tok in text_tokens)
-
-        # Expand each issue's own keywords with lightweight synonym sets.
-        # This gives all DB issues paraphrase tolerance, not only hardcoded ones.
-        issue_profile = _expand_issue_tokens(lowered_issue)
-        score += sum(1 for tok in issue_profile if tok in text_tokens)
-
-        return score
-
-    best_issue = None
-    best_score = 0
     for issue in known_issues:
-        score = _semantic_issue_score(issue, search_space)
-        if score > best_score:
-            best_score = score
-            best_issue = issue
+        if issue.lower() in search_space:
+            return issue, known_issues
 
-    # Require a minimal score so generic support queries don't force a wrong issue.
-    if best_issue and best_score >= 3:
-        return best_issue, known_issues
-
-    # LLM fallback: select the closest issue by meaning when there is no lexical overlap.
+    # Context-based resolver: infer the best issue from meaning using recent chat context.
     if known_issues:
+        recent_context = _extract_recent_user_text(conversation_history)
+
+        candidate_details = []
+        for item in brand_entries:
+            issue = (item.get("specific_issue") or "").strip()
+            if not issue:
+                continue
+
+            steps_preview = [
+                str(step).strip()
+                for step in (item.get("advanced_sop_steps") or [])[:2]
+                if str(step).strip()
+            ]
+            candidate_details.append({
+                "issue": issue,
+                "steps_preview": steps_preview,
+            })
+
         issue_pick_prompt = f"""
-        Choose the closest issue from the provided list for this support request.
+        You are matching a user's device problem to one known troubleshooting issue.
 
-        User request:
-        {search_space}
+        Conversation context (recent user messages):
+        {recent_context or "(none)"}
 
-        Candidate issues:
-        {json.dumps(known_issues, ensure_ascii=True)}
+        New user message:
+        {user_message}
 
-        Return JSON with exactly this shape:
+        Candidate troubleshooting issues and SOP hints:
+        {json.dumps(candidate_details, ensure_ascii=True)}
+
+        Return valid JSON only with this exact shape:
         {{"issue": "<one candidate issue or null>", "confidence": <0 to 1 number>}}
 
         Rules:
-        - Pick only from candidate issues.
-        - If none are related, set issue to null and confidence to 0.
-        - Favor practical troubleshooting intent over exact wording.
+        - Use user intent and symptom meaning, not strict keyword overlap.
+        - Select exactly one issue only if it is meaningfully supported by context.
+        - If ambiguous or unsupported, set issue to null.
+        - Confidence must reflect certainty.
         """
 
         try:
@@ -634,13 +577,14 @@ def _resolve_issue(user_message: str, conversation_history, brand_entries):
                 use_quality_model=True,
                 fast_fail_seconds=INTENT_FAST_FAIL_SECONDS,
             ) or {}
+
             chosen_issue = str(pick.get("issue") or "").strip()
             confidence = float(pick.get("confidence", 0) or 0)
 
             if chosen_issue in known_issues and confidence >= 0.45:
                 return chosen_issue, known_issues
         except Exception:
-            logger.exception("LLM fallback issue resolution failed")
+            logger.exception("Context-based issue resolution failed")
 
     return None, known_issues
 
