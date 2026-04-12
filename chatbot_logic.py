@@ -725,7 +725,6 @@ def _is_support_request(user_message: str, conversation_history=None):
             "warranty",
             "rma",
             "support",
-            "printer",
             "paper jam",
             "out of paper",
             "paper tray",
