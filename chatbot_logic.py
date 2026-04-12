@@ -129,6 +129,15 @@ def _looks_truncated(text: str):
     if re.search(r"[.!?)]['\"]?$", cleaned):
         return False
 
+    # These endings are typically incomplete thoughts.
+    if re.search(r"[,;:\-\(\[]['\"]?$", cleaned):
+        return True
+
+    trailing_word_match = re.search(r"([a-zA-Z0-9]+)['\"]?$", cleaned)
+    trailing_word = (trailing_word_match.group(1).lower() if trailing_word_match else "")
+    if trailing_word in {"a", "an", "the", "and", "or", "with", "for", "to", "like"}:
+        return True
+
     # If the text ends on an unfinished word/phrase, treat it as truncated.
     return bool(re.search(r"[a-z0-9]$", cleaned.lower()))
 
@@ -190,22 +199,28 @@ def _generate_text(
         )
 
         if allow_auto_continue and _looks_truncated(result):
-            continue_prompt = f"""
-            Continue the text below from exactly where it ended.
-            - Do not repeat earlier sentences.
-            - Do not restart from the beginning.
-            - Return only the continuation text.
+            # Retry continuation up to two times when the draft still looks incomplete.
+            for _ in range(2):
+                continue_prompt = f"""
+                Continue the text below from exactly where it ended.
+                - Do not repeat earlier sentences.
+                - Do not restart from the beginning.
+                - End with a complete sentence.
+                - Return only the continuation text.
 
-            Text:
-            {result}
-            """
-            continuation = _generate_with_gemini(
-                continue_prompt,
-                temperature=temperature,
-                max_output_tokens=min(220, max_output_tokens or CHAT_MAX_OUTPUT_TOKENS),
-            )
-            if continuation:
-                result = f"{result} {continuation}".strip()
+                Text:
+                {result}
+                """
+                continuation = _generate_with_gemini(
+                    continue_prompt,
+                    temperature=temperature,
+                    max_output_tokens=min(260, max_output_tokens or CHAT_MAX_OUTPUT_TOKENS),
+                )
+                if continuation:
+                    result = f"{result} {continuation}".strip()
+
+                if not _looks_truncated(result):
+                    break
 
         elapsed_ms = int((time.time() - provider_start) * 1000)
         _mark_llm_success("gemini", GEMINI_MODEL, elapsed_ms)
