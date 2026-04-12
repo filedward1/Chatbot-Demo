@@ -756,8 +756,111 @@ def _is_recommendation_request(user_message: str, conversation_history=None):
     )
 
 
+def _is_comparison_request(user_message: str, conversation_history=None):
+    text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    return _contains_any(
+        text,
+        [
+            "which is better",
+            "better between",
+            "compare",
+            "comparison",
+            "vs",
+            "versus",
+            " or ",
+        ],
+    )
+
+
 def _tokenize_text(text: str):
     return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _pick_comparison_candidates(user_message: str, conversation_history, catalog: dict, max_items: int = 2):
+    laptops = catalog.get("laptop", []) or []
+    query_text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    query_tokens = _tokenize_text(query_text)
+
+    direct = []
+    for item in laptops:
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        if name.lower() in query_text:
+            direct.append(item)
+
+    if len(direct) >= max_items:
+        return direct[:max_items]
+
+    scored = []
+    for item in laptops:
+        name = str(item.get("name", "")).strip()
+        tags = str(item.get("tags", "")).strip().lower()
+        if not name:
+            continue
+        pool = _tokenize_text(f"{name} {tags}")
+        overlap = len(pool.intersection(query_tokens))
+        if overlap > 0:
+            scored.append((overlap, item))
+
+    scored.sort(key=lambda row: row[0], reverse=True)
+    picks = list(direct)
+    for _, item in scored:
+        if item in picks:
+            continue
+        picks.append(item)
+        if len(picks) >= max_items:
+            break
+
+    return picks[:max_items]
+
+
+def _build_catalog_comparison(user_message: str, conversation_history, catalog: dict):
+    picks = _pick_comparison_candidates(user_message, conversation_history, catalog, max_items=2)
+    if len(picks) < 2:
+        return _build_catalog_recommendation(user_message, conversation_history, catalog)
+
+    perf_tokens = {
+        "i7", "i9", "ryzen", "r7", "r9", "rtx", "gpu", "graphics", "gaming", "performance", "creator"
+    }
+
+    def format_php_price(value):
+        try:
+            return f"Php (P){int(value):,}"
+        except Exception:
+            return "Php (P)N/A"
+
+    def score_item(item):
+        tags = str(item.get("tags", "")).lower()
+        tokens = _tokenize_text(f"{item.get('name', '')} {tags}")
+        score = len(tokens.intersection(perf_tokens))
+        try:
+            price = int(item.get("price") or 0)
+        except Exception:
+            price = 0
+        score += min(price // 50000, 4)
+        return score
+
+    a, b = picks[0], picks[1]
+    a_score = score_item(a)
+    b_score = score_item(b)
+    winner = a if a_score >= b_score else b
+
+    winner_name = winner.get("name", "Unknown")
+    a_name = a.get("name", "Unknown")
+    b_name = b.get("name", "Unknown")
+
+    lines = [
+        f"LEXA here. Between {a_name} and {b_name}, {winner_name} is the better choice for software creation based on our catalog data.",
+        "",
+        "Quick comparison:",
+        f"- {a_name} | {format_php_price(a.get('price'))} | tags: {a.get('tags', '')}",
+        f"- {b_name} | {format_php_price(b.get('price'))} | tags: {b.get('tags', '')}",
+        "",
+        "If you want, I can compare them specifically for coding, VMs, or game dev workloads.",
+    ]
+
+    return "\n".join(lines)
 
 
 def _build_catalog_recommendation(user_message: str, conversation_history, catalog: dict, max_items: int = 3):
@@ -1183,6 +1286,9 @@ def get_bot_response(user_message, session_id=None):
     intent_name = (intent_data or {}).get("intent", "")
     if intent_name in {"troubleshooting", "aftersales", "warranty"} or _is_support_request(user_message, recent_messages):
         bot_reply = handle_troubleshooting(user_message, conversation_history=recent_messages)
+    elif _is_comparison_request(user_message, recent_messages):
+        catalog = fetch_product_catalog()
+        bot_reply = _build_catalog_comparison(user_message, recent_messages, catalog)
     elif _is_recommendation_request(user_message, recent_messages):
         catalog = fetch_product_catalog()
         bot_reply = _build_catalog_recommendation(user_message, recent_messages, catalog)
