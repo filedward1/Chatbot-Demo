@@ -746,11 +746,15 @@ def _is_recommendation_request(user_message: str, conversation_history=None):
             "suggest",
             "looking for",
             "need a laptop",
+            "need a printer",
             "want a laptop",
+            "want a printer",
             "best laptop",
+            "best printer",
             "gaming",
             "aaa",
             "student laptop",
+            "student printer",
             "for school",
         ],
     )
@@ -774,6 +778,29 @@ def _is_comparison_request(user_message: str, conversation_history=None):
 
 def _tokenize_text(text: str):
     return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _resolve_recommendation_product_type(user_message: str, conversation_history=None, intent_data=None):
+    """Resolve whether recommendation should target laptops or printers."""
+    intent_product_type = str((intent_data or {}).get("product_type") or "").strip().lower()
+    if intent_product_type in {"laptop", "printer"}:
+        return intent_product_type
+
+    query_text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}".lower()
+    printer_clues = {
+        "printer", "print", "printing", "ink", "toner", "paper", "ppm", "laser", "inkjet"
+    }
+    laptop_clues = {
+        "laptop", "notebook", "gaming", "gpu", "rtx", "cpu", "school laptop"
+    }
+
+    query_tokens = _tokenize_text(query_text)
+    if query_tokens.intersection(printer_clues):
+        return "printer"
+    if query_tokens.intersection(laptop_clues):
+        return "laptop"
+
+    return "laptop"
 
 
 def _pick_comparison_candidates(user_message: str, conversation_history, catalog: dict, max_items: int = 2):
@@ -1035,6 +1062,184 @@ def _build_catalog_recommendation(user_message: str, conversation_history, catal
         [
             "",
             "Tell me your budget, and I can narrow this down further.",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
+def _build_printer_recommendation(user_message: str, conversation_history, catalog: dict, max_items: int = 3):
+    printers = catalog.get("printer", []) or []
+    if not printers:
+        return "LEXA here. I can't find printer entries in the catalog right now."
+
+    context_text = f"{_extract_recent_user_text(conversation_history)}\n{user_message}"
+    query_tokens = _tokenize_text(context_text)
+
+    speed_tokens = {
+        "fast", "faster", "speed", "quick", "ppm", "high", "performance", "efficient"
+    }
+    student_tokens = {"student", "students", "school", "class", "study", "budget", "affordable"}
+    expensive_tokens = {"expensive", "premium", "high-end", "highend", "top", "best"}
+
+    wants_fast = bool(query_tokens.intersection(speed_tokens))
+    wants_student = bool(query_tokens.intersection(student_tokens))
+    wants_expensive = (
+        "most expensive" in context_text.lower()
+        or "highest price" in context_text.lower()
+        or bool(query_tokens.intersection(expensive_tokens))
+    )
+
+    def infer_theme():
+        if wants_expensive:
+            return "premium"
+        if wants_student:
+            return "student"
+        if wants_fast:
+            return "fast"
+        return "general"
+
+    theme = infer_theme()
+
+    if theme == "premium":
+        section_title = "Top Premium Printer Picks"
+        intro = "If you want higher-end options, these are the strongest premium printers from the database:"
+        quick_guidance = [
+            "Pick the top-priced option if you want the most premium model available.",
+            "Choose the second pick if you want strong value at a slightly lower cost.",
+            "If speed matters, prioritize models tagged for faster printing.",
+        ]
+    elif theme == "student":
+        section_title = "Top Student Printer Picks"
+        intro = "Here are the best printer options for students and school work from the database:"
+        quick_guidance = [
+            "Choose the lowest running-cost option for frequent school printing.",
+            "Pick the balanced model if you want both value and consistent speed.",
+            "Go for all-in-one capability if you need scanning for assignments.",
+        ]
+    elif theme == "fast":
+        section_title = "Top Fast Printer Picks"
+        intro = "If speed is your priority, these are the best fast printer options I found in the database:"
+        quick_guidance = [
+            "Choose the highest-ranked speed-focused model for quicker large print jobs.",
+            "Pick the balanced option if you want speed without overspending.",
+            "Check paper capacity and duty cycle if you print frequently.",
+        ]
+    else:
+        section_title = "Recommended Printers"
+        intro = "Here are the best printer options I found in the database:"
+        quick_guidance = [
+            "Pick the top-ranked model for the safest all-around choice.",
+            "Choose the second pick if you want better value.",
+            "Tell me your budget so I can narrow this to one best option.",
+        ]
+
+    def parse_price(item):
+        try:
+            return int(item.get("price") or 0)
+        except Exception:
+            return 0
+
+    def score_item(item):
+        name = str(item.get("name", "")).strip().lower()
+        tags = str(item.get("tags", "")).strip().lower()
+        token_pool = _tokenize_text(f"{name} {tags}")
+        price = parse_price(item)
+
+        score = len(query_tokens.intersection(token_pool)) * 2
+
+        if wants_fast:
+            if token_pool.intersection(speed_tokens):
+                score += 8
+            if re.search(r"\b(\d{2,3})\s*ppm\b", tags):
+                score += 4
+
+        if wants_student:
+            if token_pool.intersection(student_tokens):
+                score += 5
+            if price > 0:
+                score += max(0, 4 - min(price // 3000, 4))
+
+        if wants_expensive:
+            score += min(price // 5000, 8)
+
+        return score, price
+
+    scored = []
+    for item in printers:
+        if not str(item.get("name", "")).strip():
+            continue
+        score, price = score_item(item)
+        scored.append((score, price, item))
+
+    if wants_expensive and wants_fast:
+        scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    elif wants_expensive:
+        scored.sort(key=lambda row: row[1], reverse=True)
+    else:
+        scored.sort(key=lambda row: (row[0], -row[1]), reverse=True)
+
+    selected = [row[2] for row in scored[:max_items]]
+
+    def summarize_best_for(item):
+        tags = str(item.get("tags", "")).lower()
+        tag_tokens = _tokenize_text(tags)
+
+        if theme == "premium":
+            if tag_tokens.intersection(speed_tokens):
+                return "premium printing with stronger speed for heavier workloads"
+            return "premium everyday and office printing"
+
+        if theme == "student":
+            if tag_tokens.intersection(speed_tokens):
+                return "student use with faster assignment and document printing"
+            return "school requirements, reviewers, and regular home printing"
+
+        if theme == "fast":
+            return "high-volume or time-sensitive printing tasks"
+
+        return "general home and office printing"
+
+    def format_php_price(value):
+        try:
+            return f"Php (P){int(value):,}"
+        except Exception:
+            return "Php (P)N/A"
+
+    lines = [
+        "Hello! I'm LEXA, your Laptop EXpert Assistant.",
+        "",
+        intro,
+        "",
+        f"## {section_title}",
+        "",
+    ]
+
+    for idx, item in enumerate(selected, start=1):
+        lines.extend(
+            [
+                f"{idx}. **{item.get('name', 'Unknown')}**",
+                f"   - **Price:** {format_php_price(item.get('price'))}",
+                f"   - **Best For:** {summarize_best_for(item)}",
+                f"   - **Tags:** {item.get('tags', '')}",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "### LEXA's Quick Guidance",
+            "",
+        ]
+    )
+
+    for tip in quick_guidance:
+        lines.append(f"- {tip}")
+
+    lines.extend(
+        [
+            "",
+            "Tell me your estimated monthly print volume, and I can narrow this down further.",
         ]
     )
 
@@ -1394,7 +1599,15 @@ def get_bot_response(user_message, session_id=None):
         bot_reply = _build_catalog_comparison(user_message, recent_messages, catalog)
     elif _is_recommendation_request(user_message, recent_messages):
         catalog = fetch_product_catalog()
-        bot_reply = _build_catalog_recommendation(user_message, recent_messages, catalog)
+        recommendation_type = _resolve_recommendation_product_type(
+            user_message,
+            conversation_history=recent_messages,
+            intent_data=intent_data,
+        )
+        if recommendation_type == "printer":
+            bot_reply = _build_printer_recommendation(user_message, recent_messages, catalog)
+        else:
+            bot_reply = _build_catalog_recommendation(user_message, recent_messages, catalog)
     else:
         catalog = fetch_product_catalog()
         products_context = format_product_catalog(catalog)
